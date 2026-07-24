@@ -1,0 +1,150 @@
+locomotion_controller:
+  topics:
+    # Published once with true after all four models are warm, the first
+    # Unitree LowCmd frame has been sent, and the initialization stand is done.
+    # The publisher uses transient-local QoS.
+    initialized: /hecbot/locomotion/initialized
+
+    # Application layer: std_msgs/msg/UInt8, legal values 1, 2, 3.
+    high_level_mode: /hecbot/locomotion/high_level_mode
+
+    # Navigation layer: std_msgs/msg/UInt8, legal values 1, 2.
+    # This value is only interpreted while high-level mode 1 is active.
+    low_level_mode: /hecbot/locomotion/low_level_mode
+
+    # Navigation layer: std_msgs/msg/Float32MultiArray with exactly 3 values.
+    navigation_command: /hecbot/locomotion/navigation_command
+
+    # Manipulation layer: std_msgs/msg/String containing the documented JSON.
+    arm_command: /hecbot/upper_body_cmd
+    queue_depth: 10
+
+  runtime:
+    # The Conda environment contains ONNX Runtime, CycloneDDS and Unitree SDK2.
+    python_executable: /home/hecbot/miniconda3/envs/locomotion_controller/bin/python
+    socket_path: /tmp/locomotion_controller.sock
+    startup_timeout_s: 70.0
+    request_timeout_s: 2.0
+    cyclonedds_home: /home/hecbot/miniconda3/envs/locomotion_controller
+    network_interface: enp86s0
+    robot_ip: 192.168.123.161
+    check_robot_reachable: true
+    confirm_real_robot: true
+
+  state_machine:
+    # After the first LowCmd frame, remain in free_walk [0, 0, 0] for exactly
+    # this configured period before the ROS node publishes initialized=true.
+    initialization_stand_duration_s: 2.0
+
+    # Every application request for mode 1 or 2 first runs free_walk with an
+    # exact zero velocity for this duration. The same duration is used when
+    # mode 1 changes from low-level mode 1 to low-level mode 2.
+    stand_duration_s: 1.0
+
+    # Stale inputs are not inferred. Navigation becomes zero and arm hijacking
+    # is removed when the corresponding deadline expires.
+    navigation_timeout_s: 0.25
+    arm_timeout_s: 0.20
+
+  models:
+    free_walk: models/free_walk.onnx
+    accurate_arrival: models/accurate_arrival.onnx
+    arm_stand: models/standing_grasp.onnx
+    arm_walk: models/walk_with_object.onnx
+
+  controller:
+    # The model and Unitree deployment contract. All values are required.
+    control_dt: 0.02
+    imu_type: pelvis
+    lowcmd_topic: rt/lowcmd
+    lowstate_topic: rt/lowstate
+    lowstate_startup_timeout_s: 15.0
+    lowstate_runtime_timeout_s: 0.20
+    motion_release_timeout_s: 8.0
+    startup_move_s: 10.0
+    first_frame_timeout_s: 3.0
+    stop_timeout_s: 5.0
+    fault_damping_duration_s: 1.0
+    model_switch_blend_s: 0.10
+
+    command_ramp: true
+    command_max_linear_accel: 0.5
+    command_max_yaw_accel: 1.2
+
+    motor_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+
+    policy_joint_names:
+      - left_hip_pitch_joint
+      - right_hip_pitch_joint
+      - waist_yaw_joint
+      - left_hip_roll_joint
+      - right_hip_roll_joint
+      - waist_roll_joint
+      - left_hip_yaw_joint
+      - right_hip_yaw_joint
+      - waist_pitch_joint
+      - left_knee_joint
+      - right_knee_joint
+      - left_shoulder_pitch_joint
+      - right_shoulder_pitch_joint
+      - left_ankle_pitch_joint
+      - right_ankle_pitch_joint
+      - left_shoulder_roll_joint
+      - right_shoulder_roll_joint
+      - left_ankle_roll_joint
+      - right_ankle_roll_joint
+      - left_shoulder_yaw_joint
+      - right_shoulder_yaw_joint
+      - left_elbow_joint
+      - right_elbow_joint
+      - left_wrist_roll_joint
+      - right_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - right_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_wrist_yaw_joint
+
+    motor_joint_names:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      - waist_yaw_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      - left_wrist_roll_joint
+      - left_wrist_pitch_joint
+      - left_wrist_yaw_joint
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+      - right_wrist_roll_joint
+      - right_wrist_pitch_joint
+      - right_wrist_yaw_joint
+
+    default_angles: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 0.3, -0.2, -0.2, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.97, 0.97, 0.15, -0.15, 0.0, 0.0, 0.0, 0.0]
+    kps: [100.0, 100.0, 200.0, 100.0, 100.0, 40.0, 100.0, 100.0, 40.0, 150.0, 150.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
+    kds: [2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 4.0, 4.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    arm_stand_default_angles: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 0.3, -0.2, -0.2, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.97, 0.97, 0.15, -0.15, 0.0, 0.0, 0.0, 0.0]
+    arm_stand_kps: [100.0, 100.0, 200.0, 100.0, 100.0, 40.0, 100.0, 100.0, 40.0, 150.0, 150.0, 300.0, 300.0, 40.0, 40.0, 300.0, 300.0, 40.0, 40.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0]
+    arm_stand_kds: [2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 4.0, 4.0, 5.0, 5.0, 2.0, 2.0, 5.0, 5.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
+
+    angular_velocity_scale: 1.0
+    joint_position_scale: 1.0
+    joint_velocity_scale: 1.0
+    action_scale: 0.25
+    max_velocity_command: [0.8, 0.5, 1.57]
