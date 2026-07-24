@@ -224,6 +224,29 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | `h` | 重新显示帮助 |
 | `q` | 退出测试节点 |
 
+### 终端调试日志
+
+控制进程在每次 50 Hz ONNX 推理后，向控制器终端输出一行 `[INFERENCE]` JSON：
+
+```text
+[INFERENCE] {"event":"policy_inference","frame":125,"model":"free_walk","high_mode":1,"low_mode":1,"standing_transition":false,"navigation_input":{"semantics":"velocity","selected":[0.25,0.0,0.0],"model_input":[0.25,0.0,0.0]},"arm_input":null,"model_output":[...29 values...]}
+```
+
+- `selected`：状态机选择的速度或骨盆坐标系位置误差。
+- `model_input`：经过速度限幅/斜坡后实际写入 observation 的三元组；位置模式不做变换。
+- `arm_input`：当前有效的双臂位置、速度、权重和序号；无有效双臂消息时为 `null`。
+- `model_output`：ONNX 本帧返回的原始 29 维 action，记录发生在双臂覆盖和模型切换插值之前。
+
+high-level 或 low-level mode 真正改变后，控制器终端会输出：
+
+```text
+[locomotion_controller_node-1] 模式切换为 high mode 1
+[locomotion_controller_node-1] 模式切换为 low mode 1
+```
+
+重复发送相同 mode 不重复输出切换日志。按 `4` 本身只启动速度轨迹，不会自动选择
+模式；完整操作顺序为 `v → 1 → 4`。
+
 推荐测试顺序：
 
 1. 按 `v`、`1`、`4`：验证 mode 1 low mode 1 和速度模型。

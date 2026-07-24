@@ -69,7 +69,7 @@ class LocomotionStateMachine:
         self._arm_received_at = 0.0
         self._stand_until = 0.0
 
-    def set_high_mode(self, high_mode: int, now: float | None = None) -> None:
+    def set_high_mode(self, high_mode: int, now: float | None = None) -> bool:
         current_time = monotonic() if now is None else float(now)
         with self._lock:
             if high_mode not in HIGH_MODES:
@@ -82,7 +82,7 @@ class LocomotionStateMachine:
                     "controller entered free-walk zero standby"
                 )
             if high_mode == self._high_mode:
-                return
+                return False
             self._high_mode = high_mode
             self._reset_navigation()
             self._stand_until = (
@@ -90,8 +90,9 @@ class LocomotionStateMachine:
                 if high_mode != HIGH_MODE_ARM_WALK
                 else 0.0
             )
+            return True
 
-    def set_low_mode(self, low_mode: int, now: float | None = None) -> None:
+    def set_low_mode(self, low_mode: int, now: float | None = None) -> bool:
         current_time = monotonic() if now is None else float(now)
         with self._lock:
             if low_mode not in LOW_MODES:
@@ -104,7 +105,7 @@ class LocomotionStateMachine:
                     "controller entered free-walk zero standby"
                 )
             if low_mode == self._low_mode:
-                return
+                return False
             previous_low_mode = self._low_mode
             self._low_mode = low_mode
             self._reset_navigation()
@@ -117,6 +118,7 @@ class LocomotionStateMachine:
                     self._stand_until,
                     current_time + self._stand_duration_s,
                 )
+            return True
 
     def set_navigation_command(
         self,

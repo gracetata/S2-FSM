@@ -85,13 +85,19 @@ class LocomotionControllerNode(Node):
 
     def _receive_high_mode(self, message: UInt8) -> None:
         try:
-            self._runtime.set_high_mode(message.data)
+            if self._runtime.set_high_mode(message.data):
+                self.get_logger().info(
+                    f"模式切换为 high mode {message.data}"
+                )
         except (ConnectionError, OSError, RuntimeError, ValueError) as error:
             self.get_logger().error(f"high-level mode rejected: {error}")
 
     def _receive_low_mode(self, message: UInt8) -> None:
         try:
-            self._runtime.set_low_mode(message.data)
+            if self._runtime.set_low_mode(message.data):
+                self.get_logger().info(
+                    f"模式切换为 low mode {message.data}"
+                )
         except (ConnectionError, OSError, RuntimeError, ValueError) as error:
             self.get_logger().error(f"low-level mode rejected: {error}")
 

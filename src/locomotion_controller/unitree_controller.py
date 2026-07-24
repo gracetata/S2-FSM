@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from threading import Event, Lock, Thread
 from time import monotonic, sleep
 
@@ -113,6 +114,7 @@ class UnitreeController:
         self._physical_command = np.zeros(3, dtype=np.float32)
         self._last_target = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         self._active_model_name: str | None = None
+        self._inference_frame_index = 0
         self._switch_started_at = 0.0
         self._switch_from_target = np.zeros(
             POLICY_JOINT_COUNT,
@@ -295,6 +297,7 @@ class UnitreeController:
         action = self._policies.get_policy(selection.model_name).infer(
             self._observation
         )
+        self._log_inference_frame(selection, command, action)
         target_velocity = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         held_arm_target: np.ndarray | None = None
         if selection.model_name in {MODEL_ARM_STAND, MODEL_ARM_WALK}:
@@ -334,6 +337,35 @@ class UnitreeController:
             target_velocity[self._policy_to_motor],
         )
         self._send_command()
+
+    def _log_inference_frame(
+        self,
+        selection: ControlSelection,
+        model_command: np.ndarray,
+        model_output: np.ndarray,
+    ) -> None:
+        arm_command = selection.arm_command
+        arm_input = None if arm_command is None else arm_command.to_payload()
+        payload = {
+            "event": "policy_inference",
+            "frame": self._inference_frame_index,
+            "model": selection.model_name,
+            "high_mode": selection.high_mode,
+            "low_mode": selection.low_mode,
+            "standing_transition": selection.is_standing_transition,
+            "navigation_input": {
+                "semantics": selection.command_semantics,
+                "selected": list(selection.command),
+                "model_input": model_command.tolist(),
+            },
+            "arm_input": arm_input,
+            "model_output": model_output.tolist(),
+        }
+        print(
+            f"[INFERENCE] {json.dumps(payload, separators=(',', ':'))}",
+            flush=True,
+        )
+        self._inference_frame_index += 1
 
     def _begin_model_switch(self, model_name: str, now: float) -> None:
         self._active_model_name = model_name

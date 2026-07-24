@@ -57,12 +57,22 @@ class ControlRuntime:
         self._require_healthy()
         if operation == "high_mode":
             _require_request_keys(request, {"operation", "value"})
-            self._state_machine.set_high_mode(_integer(request["value"], "value"))
-            return self._response(True, "high-level mode accepted")
+            changed = self._state_machine.set_high_mode(
+                _integer(request["value"], "value")
+            )
+            return self._mode_response(
+                changed,
+                "high-level mode accepted",
+            )
         if operation == "low_mode":
             _require_request_keys(request, {"operation", "value"})
-            self._state_machine.set_low_mode(_integer(request["value"], "value"))
-            return self._response(True, "low-level mode accepted")
+            changed = self._state_machine.set_low_mode(
+                _integer(request["value"], "value")
+            )
+            return self._mode_response(
+                changed,
+                "low-level mode accepted",
+            )
         if operation == "navigation":
             _require_request_keys(request, {"operation", "values"})
             command = parse_navigation_command(request["values"])
@@ -103,6 +113,12 @@ class ControlRuntime:
             "success": success,
             "detail": detail,
         }
+
+    @staticmethod
+    def _mode_response(changed: bool, detail: str) -> dict[str, object]:
+        response = ControlRuntime._response(True, detail)
+        response["changed"] = changed
+        return response
 
 
 class UnixControlServer:

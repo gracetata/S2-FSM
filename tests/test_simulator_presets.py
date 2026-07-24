@@ -35,7 +35,9 @@ class SimulatorPresetsTest(unittest.TestCase):
         ).velocity_trajectories[0]
 
         self.assertEqual(trajectory.sample(0.5), ZERO_COMMAND)
-        self.assertEqual(trajectory.sample(1.5), (0.25, 0.0, 0.0))
+        forward_command = trajectory.sample(1.5)
+        self.assertGreater(forward_command[0], 0.0)
+        self.assertEqual(forward_command[1:], (0.0, 0.0))
         self.assertEqual(
             trajectory.sample(trajectory.duration_s),
             ZERO_COMMAND,

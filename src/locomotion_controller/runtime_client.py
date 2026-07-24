@@ -59,11 +59,11 @@ class RuntimeClient:
         )
         self._wait_until_ready()
 
-    def set_high_mode(self, value: int) -> None:
-        self._require_success("high_mode", {"value": value})
+    def set_high_mode(self, value: int) -> bool:
+        return self._require_mode_change("high_mode", value)
 
-    def set_low_mode(self, value: int) -> None:
-        self._require_success("low_mode", {"value": value})
+    def set_low_mode(self, value: int) -> bool:
+        return self._require_mode_change("low_mode", value)
 
     def set_navigation(self, values: tuple[float, float, float]) -> None:
         self._require_success("navigation", {"values": list(values)})
@@ -138,10 +138,18 @@ class RuntimeClient:
         self,
         operation: str,
         payload: dict[str, object] | None = None,
-    ) -> None:
+    ) -> dict[str, object]:
         response = self.request(operation, payload)
         if response["success"] is not True:
             raise RuntimeError(str(response["detail"]))
+        return response
+
+    def _require_mode_change(self, operation: str, value: int) -> bool:
+        response = self._require_success(operation, {"value": value})
+        changed = response.get("changed")
+        if not isinstance(changed, bool):
+            raise RuntimeError("runtime mode response is missing changed state")
+        return changed
 
     def _wait_until_ready(self) -> None:
         deadline = monotonic() + self._config.runtime.startup_timeout_s

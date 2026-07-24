@@ -63,8 +63,12 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(target.command, (0.5, 0.0, 0.1))
 
     def test_repeated_high_mode_does_not_restart_standing(self):
-        self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=1.0)
-        self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=1.8)
+        self.assertTrue(
+            self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=1.0)
+        )
+        self.assertFalse(
+            self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=1.8)
+        )
         selection = self.machine.select(now=2.0)
         self.assertFalse(selection.is_standing_transition)
 
