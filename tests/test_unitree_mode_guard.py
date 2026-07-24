@@ -20,7 +20,7 @@ class UnitreeModeGuardTest(unittest.TestCase):
 
         cls.module = unitree_controller
 
-    def test_releases_only_after_ai_and_zero_torque(self):
+    def test_releases_active_mode_and_confirms_debug_mode(self):
         events = []
         motion_client = MagicMock()
         motion_results = iter(
@@ -40,105 +40,62 @@ class UnitreeModeGuardTest(unittest.TestCase):
 
         motion_client.CheckMode.side_effect = check_mode
         motion_client.ReleaseMode.side_effect = release_mode
-        loco_client = MagicMock()
-
-        def get_fsm_id():
-            events.append("get_fsm_id")
-            return 0, 0
-
-        loco_client.GetFsmId.side_effect = get_fsm_id
-        with (
-            patch.object(
-                self.module,
-                "MotionSwitcherClient",
-                return_value=motion_client,
-            ),
-            patch.object(
-                self.module,
-                "LocoClient",
-                return_value=loco_client,
-            ),
+        with patch.object(
+            self.module,
+            "MotionSwitcherClient",
+            return_value=motion_client,
         ):
-            self.module.release_motion_mode(1.0)
+            self.module.enter_debug_mode(1.0)
 
         self.assertEqual(
             events,
             [
                 "check_mode",
-                "get_fsm_id",
                 "release_mode",
                 "check_mode",
             ],
         )
 
-    def test_rejects_non_ai_mode_without_release(self):
+    def test_releases_non_ai_mode(self):
+        motion_client = MagicMock()
+        motion_client.CheckMode.side_effect = (
+            (0, {"name": "normal", "form": "0"}),
+            (0, {"name": "", "form": "0"}),
+        )
+        motion_client.ReleaseMode.return_value = 0, None
+        with patch.object(
+            self.module,
+            "MotionSwitcherClient",
+            return_value=motion_client,
+        ):
+            self.module.enter_debug_mode(1.0)
+
+        motion_client.ReleaseMode.assert_called_once_with()
+
+    def test_accepts_existing_debug_mode_without_release(self):
         motion_client = MagicMock()
         motion_client.CheckMode.return_value = (
             0,
-            {"name": "normal", "form": "0"},
+            {"name": "", "form": "0"},
         )
-        loco_client = MagicMock()
-        with (
-            patch.object(
-                self.module,
-                "MotionSwitcherClient",
-                return_value=motion_client,
-            ),
-            patch.object(
-                self.module,
-                "LocoClient",
-                return_value=loco_client,
-            ),
+        with patch.object(
+            self.module,
+            "MotionSwitcherClient",
+            return_value=motion_client,
         ):
-            with self.assertRaisesRegex(RuntimeError, "mode=ai"):
-                self.module.release_motion_mode(1.0)
-
-        loco_client.GetFsmId.assert_not_called()
-        motion_client.ReleaseMode.assert_not_called()
-
-    def test_rejects_nonzero_fsm_without_release(self):
-        motion_client = MagicMock()
-        motion_client.CheckMode.return_value = (
-            0,
-            {"name": "ai", "form": "0"},
-        )
-        loco_client = MagicMock()
-        loco_client.GetFsmId.return_value = 0, 1
-        with (
-            patch.object(
-                self.module,
-                "MotionSwitcherClient",
-                return_value=motion_client,
-            ),
-            patch.object(
-                self.module,
-                "LocoClient",
-                return_value=loco_client,
-            ),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "FSM=0"):
-                self.module.release_motion_mode(1.0)
+            self.module.enter_debug_mode(1.0)
 
         motion_client.ReleaseMode.assert_not_called()
 
     def test_rejects_malformed_motion_mode_response(self):
         motion_client = MagicMock()
         motion_client.CheckMode.return_value = 0, {"name": "ai"}
-        loco_client = MagicMock()
-        with (
-            patch.object(
-                self.module,
-                "MotionSwitcherClient",
-                return_value=motion_client,
-            ),
-            patch.object(
-                self.module,
-                "LocoClient",
-                return_value=loco_client,
-            ),
+        with patch.object(
+            self.module,
+            "MotionSwitcherClient",
+            return_value=motion_client,
         ):
             with self.assertRaisesRegex(RuntimeError, "invalid mode result"):
-                self.module.release_motion_mode(1.0)
+                self.module.enter_debug_mode(1.0)
 
-        loco_client.GetFsmId.assert_not_called()
         motion_client.ReleaseMode.assert_not_called()

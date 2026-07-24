@@ -29,11 +29,11 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 2. 启动配置指定的 Conda Python 子进程。
 3. 创建四个 ONNX Runtime Session，并分别执行一次 96 维零 observation 推理。
 4. 初始化 Unitree DDS，等待第一帧有效 `rt/lowstate`。
-5. 确认 `confirm_real_robot: true`，并依次验证
-   `MotionSwitcher mode=ai` 与 `Loco FSM=0 (ZeroTorque)`。任一查询失败、结构
-   异常或状态不匹配都会在发送策略控制前终止初始化。
-6. 调用 `MotionSwitcher.ReleaseMode()`，并再次查询直到模式名严格变为空；出现
-   其他模式或超时立即失败。
+5. 确认 `confirm_real_robot: true`，读取当前 MotionSwitcher 模式。初始化不检查
+   Loco FSM ID，也不要求机器人预先处于 FSM 0。
+6. 当前模式名非空时调用 `MotionSwitcher.ReleaseMode()`，并再次查询直到模式名
+   严格变为空，即确认进入低层调试模式；已经是空模式时直接继续。查询结构异常、
+   释放失败或超时会在发送策略控制前终止初始化。
 7. 从当前实机关节位置按 minimum-jerk 轨迹移动到策略默认姿态。
 8. 启动唯一的 50 Hz 线程。此时尚无业务模式，线程执行
    `free_walk + [0,0,0]` 安全等待状态。

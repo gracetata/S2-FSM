@@ -10,7 +10,6 @@ from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
     MotionSwitcherClient,
 )
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
-from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 from unitree_sdk2py.idl.default import (
     unitree_hg_msg_dds__LowCmd_,
     unitree_hg_msg_dds__LowState_,
@@ -54,8 +53,6 @@ OBS_COMMAND = slice(6, 9)
 OBS_JOINT_POSITION = slice(9, 38)
 OBS_JOINT_VELOCITY = slice(38, 67)
 OBS_PREVIOUS_ACTION = slice(67, 96)
-EXPECTED_MOTION_MODE = "ai"
-ZERO_TORQUE_FSM_ID = 0
 MOTION_SERVICE_RETRY_CODES = {3102, 3104}
 
 
@@ -144,7 +141,7 @@ class UnitreeController:
         return self._thread is not None and self._thread.is_alive()
 
     def take_control_and_start(self) -> None:
-        release_motion_mode(self._config.motion_release_timeout_s)
+        enter_debug_mode(self._config.motion_release_timeout_s)
         self._has_taken_control = True
         self._move_to_default_position()
         self._stop.clear()
@@ -484,29 +481,17 @@ class UnitreeController:
             sleep(self._config.control_dt)
 
 
-def release_motion_mode(timeout_s: float) -> None:
-    """Verify AI ZeroTorque, then release high-level control for LowCmd."""
+def enter_debug_mode(timeout_s: float) -> None:
+    """Release any active high-level mode and confirm low-level debug mode."""
 
     motion_client = MotionSwitcherClient()
     motion_client.SetTimeout(5.0)
     motion_client.Init()
-    loco_client = LocoClient()
-    loco_client.SetTimeout(5.0)
-    loco_client.Init()
     deadline = monotonic() + timeout_s
 
     mode_name = _read_motion_mode(motion_client, deadline)
-    if mode_name != EXPECTED_MOTION_MODE:
-        raise RuntimeError(
-            "low-level takeover requires MotionSwitcher mode=ai; "
-            f"actual mode={mode_name!r}"
-        )
-    fsm_id = _read_loco_fsm_id(loco_client, deadline)
-    if fsm_id != ZERO_TORQUE_FSM_ID:
-        raise RuntimeError(
-            "low-level takeover requires Loco FSM=0 (ZeroTorque); "
-            f"actual FSM={fsm_id}"
-        )
+    if mode_name == "":
+        return
 
     while monotonic() < deadline:
         release_status, _ = motion_client.ReleaseMode()
@@ -525,13 +510,8 @@ def release_motion_mode(timeout_s: float) -> None:
         mode_name = _read_motion_mode(motion_client, deadline)
         if mode_name == "":
             return
-        if mode_name != EXPECTED_MOTION_MODE:
-            raise RuntimeError(
-                "MotionSwitcher entered an unexpected mode after release: "
-                f"{mode_name!r}"
-            )
         sleep(0.02)
-    raise TimeoutError("Unitree native motion mode was not released")
+    raise TimeoutError("Unitree did not enter low-level debug mode")
 
 
 def _read_motion_mode(
@@ -555,17 +535,3 @@ def _read_motion_mode(
             )
         return result["name"]
     raise TimeoutError("MotionSwitcher CheckMode timed out")
-
-
-def _read_loco_fsm_id(client: LocoClient, deadline: float) -> int:
-    while monotonic() < deadline:
-        status, fsm_id = client.GetFsmId()
-        if status in MOTION_SERVICE_RETRY_CODES:
-            sleep(0.2)
-            continue
-        if status != 0:
-            raise RuntimeError(f"Loco GetFsmId failed: {status}")
-        if not isinstance(fsm_id, int) or isinstance(fsm_id, bool):
-            raise RuntimeError(f"Loco returned an invalid FSM ID: {fsm_id!r}")
-        return fsm_id
-    raise TimeoutError("Loco GetFsmId timed out")

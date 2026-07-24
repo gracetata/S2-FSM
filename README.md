@@ -5,10 +5,10 @@
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
 `free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息。
 
-实机接管前存在硬性安全门：程序必须先读到
-`MotionSwitcher mode=ai` 和 `Loco FSM=0 (ZeroTorque)`，随后才调用
-`ReleaseMode()`；释放后还必须确认 MotionSwitcher 模式名变为空。任何查询失败、
-返回格式异常或状态不匹配都会终止初始化，且不会进入默认姿态运动。
+实机接管前，程序会读取当前 MotionSwitcher 状态。无论当前 Loco FSM ID 是什么，
+只要仍有高层模式，程序就调用 `ReleaseMode()`，并确认 MotionSwitcher 模式名严格
+变为空，即进入低层调试模式；已经处于空模式时直接继续。查询失败、返回格式异常、
+释放失败或超时都会终止初始化，且不会进入默认姿态运动。
 
 ## 模式
 
@@ -92,9 +92,9 @@ ros2 launch locomotion_controller locomotion_controller.launch.py \
 ```
 
 启动前必须确保没有其他程序发布 `rt/lowcmd`。实机运行还必须核对
-`network_interface`、`robot_ip` 和 `confirm_real_robot`。启动控制器之前必须先
-通过遥控器将 G1 原生运控置于 `FSM 0 / ZeroTorque`；如果当前 MotionSwitcher
-不是 `ai` 或 FSM 不是 `0`，控制器会拒绝接管。
+`network_interface`、`robot_ip` 和 `confirm_real_robot`。控制器初始化时会主动
+释放当前 MotionSwitcher 高层模式，并严格确认进入低层调试模式，不要求启动前的
+Loco FSM ID 为 `0`。
 
 ### NUC 运行前检查
 
