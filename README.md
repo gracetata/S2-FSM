@@ -55,6 +55,35 @@ source install/setup.bash
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
+### 修改代码后重新编译
+
+先停止正在运行的控制器和键盘模拟器。每次修改代码、配置、模型、launch 文件、
+`CMakeLists.txt` 或 `package.xml` 后，在 NUC 上执行：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd /home/wenduo/locomotion_controller
+
+colcon build --symlink-install --packages-select locomotion_controller
+source /home/wenduo/locomotion_controller/install/setup.bash
+```
+
+必须看到 `Summary: 1 package finished` 后再启动程序。即使仍在同一个终端，
+编译完成后也必须重新执行 `source install/setup.bash`。
+
+以后每打开一个新终端，只需重新加载 ROS 2 和本项目环境：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source /home/wenduo/locomotion_controller/install/setup.bash
+```
+
+然后启动：
+
+```bash
+ros2 launch locomotion_controller locomotion_controller.launch.py
+```
+
 使用其他配置：
 
 ```bash
