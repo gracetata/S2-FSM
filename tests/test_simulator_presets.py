@@ -7,7 +7,6 @@ from locomotion_controller.simulator_presets import (
     PRESET_SCHEMA,
     ZERO_COMMAND,
     load_preset_catalog,
-    sample_arm_transition,
 )
 
 
@@ -42,28 +41,6 @@ class SimulatorPresetsTest(unittest.TestCase):
             trajectory.sample(trajectory.duration_s),
             ZERO_COMMAND,
         )
-
-    def test_arm_transition_has_zero_endpoint_velocity(self):
-        start = (0.0, 0.0)
-        target = (1.0, -1.0)
-
-        initial_position, initial_velocity = sample_arm_transition(
-            start,
-            target,
-            0.0,
-            2.0,
-        )
-        final_position, final_velocity = sample_arm_transition(
-            start,
-            target,
-            2.0,
-            2.0,
-        )
-
-        self.assertEqual(initial_position, start)
-        self.assertEqual(initial_velocity, (0.0, 0.0))
-        self.assertEqual(final_position, target)
-        self.assertEqual(final_velocity, (0.0, 0.0))
 
     def test_unknown_preset_field_is_rejected(self):
         value = json.loads(PRESET_FILE.read_text(encoding="utf-8"))

@@ -97,6 +97,30 @@ class StateMachineTest(unittest.TestCase):
         self.assertFalse(selection.is_standing_transition)
         self.assertEqual(selection.command, ZERO_COMMAND)
 
+    def test_arm_mode_waits_for_a_pose_received_after_mode_entry(self):
+        old_arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)
+        new_arm = ArmCommand(2, (0.2,) * 14, (0.0,) * 14, 1.0)
+        self.machine.set_arm_command(old_arm, now=1.0)
+
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.1)
+        self.assertIsNone(self.machine.select(now=1.1).arm_command)
+        with self.assertRaises(ValueError):
+            self.machine.set_arm_command(old_arm, now=1.15)
+
+        self.machine.set_arm_command(new_arm, now=1.2)
+        self.assertEqual(self.machine.select(now=1.2).arm_command, new_arm)
+
+    def test_switching_between_arm_modes_requires_a_new_pose(self):
+        arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.0)
+        self.machine.set_arm_command(arm, now=1.1)
+        self.assertEqual(self.machine.select(now=1.1).arm_command, arm)
+
+        self.machine.set_high_mode(HIGH_MODE_ARM_STAND, now=2.0)
+        selection = self.machine.select(now=3.0)
+        self.assertEqual(selection.model_name, MODEL_ARM_STAND)
+        self.assertIsNone(selection.arm_command)
+
     def test_low_mode_two_to_one_switches_directly_with_zero_default(self):
         self.machine.set_low_mode(LOW_MODE_TARGET_POSE)
         self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=0.0)

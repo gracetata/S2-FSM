@@ -67,9 +67,6 @@ class ControllerConfig:
     stop_timeout_s: float
     fault_damping_duration_s: float
     model_switch_blend_s: float
-    is_command_ramp_enabled: bool
-    command_max_linear_accel: float
-    command_max_yaw_accel: float
     motor_indices: tuple[int, ...]
     policy_joint_names: tuple[str, ...]
     motor_joint_names: tuple[str, ...]
@@ -285,9 +282,6 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         "stop_timeout_s",
         "fault_damping_duration_s",
         "model_switch_blend_s",
-        "command_ramp",
-        "command_max_linear_accel",
-        "command_max_yaw_accel",
         "motor_indices",
         "policy_joint_names",
         "motor_joint_names",
@@ -404,18 +398,6 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         model_switch_blend_s=_nonnegative_float(
             settings["model_switch_blend_s"],
             "controller.model_switch_blend_s",
-        ),
-        is_command_ramp_enabled=_boolean(
-            settings["command_ramp"],
-            "controller.command_ramp",
-        ),
-        command_max_linear_accel=_positive_float(
-            settings["command_max_linear_accel"],
-            "controller.command_max_linear_accel",
-        ),
-        command_max_yaw_accel=_positive_float(
-            settings["command_max_yaw_accel"],
-            "controller.command_max_yaw_accel",
         ),
         motor_indices=motor_indices,
         policy_joint_names=policy_joint_names,

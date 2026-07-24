@@ -73,7 +73,7 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | high 3 | `arm_walk` | `[0,0,0]` velocity | 外部 14DoF 覆盖 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
-`command_ramp` 被绕过，模型 observation 的 command 三元组是严格零值。
+模型 observation 的 command 三元组是严格零值。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
 
 low-level mode 只在 high mode 1 下解释；在其他 high mode 下收到的值仅被保存，
@@ -90,10 +90,11 @@ low-level mode 只在 high mode 1 下解释；在其他 high mode 下收到的�
 模式和对应参数不要求在同一时刻到达，控制帧也不会使用空参数：
 
 - 进入或切换导航语义后，尚未收到对应新参数时使用 `[0,0,0]`。
-- 进入 mode 2/3 时，尚未收到新双臂参数则使用上一控制帧的实际双臂目标；控制器
-  每帧更新该值，因此输入为空或不同步时不会发生关节目标跳变。
+- 每次进入 mode 2/3 都作废进入该 mode 之前缓存的双臂消息。尚未收到切换后的
+  新双臂参数时使用上一控制帧的实际双臂目标；控制器每帧更新该值，因此输入为空
+  或不同步时不会发生关节目标跳变。
 - 收到有效新双臂参数后，按消息 `weight` 在切入当前模型时保存的基线和新目标之间
-  融合。
+  融合，并在当前帧直接输出结果，不生成时间插值轨迹。
 
 ### 3.4 超时
 
@@ -123,8 +124,9 @@ low-level mode 只在 high mode 1 下解释；在其他 high mode 下收到的�
    - `67:96` 上一帧实际执行 action。
 6. 调用当前预热 ONNX Session，得到 29 维 action。
 7. mode 2/3 下按 `weight` 将外部双臂位置与切入基线融合，覆盖 action 中的
-   14 个双臂分量；外部双臂速度同样乘以 `weight`。
-8. 对模型切换前后的目标关节位置做线性融合。
+   14 个双臂分量；外部双臂速度同样乘以 `weight`。双臂分量绕过模型切换融合，
+   在收到消息的当前帧直接生效。
+8. 仅对模型切换前后的腿、腰目标关节位置做线性融合。
 9. 转为 Unitree motor order，写入位置、速度、Kp、Kd 和 CRC。
 10. 发布唯一一帧 `rt/lowcmd`，等待下一个单调时钟 deadline。
 
@@ -159,7 +161,8 @@ mode 2 使用 `arm_stand_*` 的默认角和增益；其他三个模型使用通�
 
 low mode 1 时单位为 `[m/s, m/s, rad/s]`；low mode 2 时单位为
 `[m, m, rad]`。速度命令最终按 `max_velocity_command` 逐分量限制；位置误差不套用
-速度限制。
+速度限制。速度命令没有时间插值或加速度限幅，收到后在下一控制帧直接写入
+observation。
 
 ### 5.4 双臂输入
 
@@ -221,6 +224,6 @@ YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要
 
 测试节点以 20 Hz 刷新导航三元组和严格双臂 JSON。high/low mode 只在键盘选择时
 发布；速度轨迹结束后自动保持 `[0,0,0]`。双臂姿态使用
-`config/simulator_presets.json` 中的持续时间执行 minimum-jerk 插值，发布位置和
-解析速度。进程内双臂序号从系统 monotonic nanosecond 起始，测试节点重启后仍高于
-同一次系统启动中的旧序号。
+`config/simulator_presets.json` 中的目标值直接切换，不生成中间姿态，发布速度为
+零。进程内双臂序号从系统 monotonic nanosecond 起始，测试节点重启后仍高于同一次
+系统启动中的旧序号。

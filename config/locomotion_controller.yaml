@@ -67,10 +67,6 @@ locomotion_controller:
     fault_damping_duration_s: 1.0
     model_switch_blend_s: 0.10
 
-    command_ramp: true
-    command_max_linear_accel: 0.5
-    command_max_yaw_accel: 1.2
-
     motor_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
 
     policy_joint_names:

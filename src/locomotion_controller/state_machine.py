@@ -67,6 +67,7 @@ class LocomotionStateMachine:
         self._navigation_received_at = 0.0
         self._arm_command: ArmCommand | None = None
         self._arm_received_at = 0.0
+        self._last_arm_sequence: int | None = None
         self._stand_until = 0.0
 
     def set_high_mode(self, high_mode: int, now: float | None = None) -> bool:
@@ -76,6 +77,7 @@ class LocomotionStateMachine:
                 self._high_mode = None
                 self._low_mode = None
                 self._reset_navigation()
+                self._reset_arm_input()
                 self._stand_until = 0.0
                 raise ValueError(
                     f"high-level mode must be one of {sorted(HIGH_MODES)}; "
@@ -85,6 +87,11 @@ class LocomotionStateMachine:
                 return False
             self._high_mode = high_mode
             self._reset_navigation()
+            if high_mode in {HIGH_MODE_ARM_STAND, HIGH_MODE_ARM_WALK}:
+                # A pose received for an earlier mode must not be applied to
+                # the newly selected arm policy. The controller holds its
+                # previous frame until a post-switch command arrives.
+                self._reset_arm_input()
             self._stand_until = (
                 current_time + self._stand_duration_s
                 if high_mode != HIGH_MODE_ARM_WALK
@@ -99,6 +106,7 @@ class LocomotionStateMachine:
                 self._high_mode = None
                 self._low_mode = None
                 self._reset_navigation()
+                self._reset_arm_input()
                 self._stand_until = 0.0
                 raise ValueError(
                     f"low-level mode must be one of {sorted(LOW_MODES)}; "
@@ -138,12 +146,13 @@ class LocomotionStateMachine:
         current_time = monotonic() if now is None else float(now)
         with self._lock:
             if (
-                self._arm_command is not None
-                and command.sequence <= self._arm_command.sequence
+                self._last_arm_sequence is not None
+                and command.sequence <= self._last_arm_sequence
             ):
                 raise ValueError("arm command sequence must increase")
             self._arm_command = command
             self._arm_received_at = current_time
+            self._last_arm_sequence = command.sequence
 
     def select(self, now: float | None = None) -> ControlSelection:
         current_time = monotonic() if now is None else float(now)
@@ -246,3 +255,7 @@ class LocomotionStateMachine:
     def _reset_navigation(self) -> None:
         self._navigation_command = ZERO_COMMAND
         self._navigation_received_at = 0.0
+
+    def _reset_arm_input(self) -> None:
+        self._arm_command = None
+        self._arm_received_at = 0.0

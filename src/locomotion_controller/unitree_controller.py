@@ -111,7 +111,6 @@ class UnitreeController:
 
         self._observation = np.zeros(OBSERVATION_SIZE, dtype=np.float32)
         self._previous_action = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
-        self._physical_command = np.zeros(3, dtype=np.float32)
         self._last_target = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         self._active_model_name: str | None = None
         self._inference_frame_index = 0
@@ -299,17 +298,16 @@ class UnitreeController:
         )
         self._log_inference_frame(selection, command, action)
         target_velocity = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
-        held_arm_target: np.ndarray | None = None
+        direct_arm_target: np.ndarray | None = None
         if selection.model_name in {MODEL_ARM_STAND, MODEL_ARM_WALK}:
-            held_arm_target = self._last_target[self._arm_indices].copy()
-            arm_target = held_arm_target
+            direct_arm_target = self._last_target[self._arm_indices].copy()
             if selection.arm_command is not None:
                 external_positions = np.asarray(
                     selection.arm_command.positions,
                     dtype=np.float32,
                 )
                 weight = selection.arm_command.weight
-                arm_target = (
+                direct_arm_target = (
                     self._arm_baseline * (1.0 - weight)
                     + external_positions * weight
                 )
@@ -318,13 +316,15 @@ class UnitreeController:
                     * weight
                 )
             action[self._arm_indices] = (
-                arm_target - default_angles[self._arm_indices]
+                direct_arm_target - default_angles[self._arm_indices]
             ) / self._config.action_scale
 
         target = default_angles + action * self._config.action_scale
         target = self._blend_model_switch(target, now)
-        if held_arm_target is not None and selection.arm_command is None:
-            target[self._arm_indices] = held_arm_target
+        if direct_arm_target is not None:
+            # Arm commands are never temporally interpolated. With no command
+            # for this mode, direct_arm_target is the previous frame target.
+            target[self._arm_indices] = direct_arm_target
         self._previous_action = (
             target - default_angles
         ) / self._config.action_scale
@@ -373,7 +373,6 @@ class UnitreeController:
         self._switch_from_target = self._last_target.copy()
         self._arm_baseline = self._last_target[self._arm_indices].copy()
         self._previous_action.fill(0.0)
-        self._physical_command.fill(0.0)
 
     def _parameters_for(
         self,
@@ -390,42 +389,27 @@ class UnitreeController:
     def _command_for(self, selection: ControlSelection) -> np.ndarray:
         target = np.asarray(selection.command, dtype=np.float32)
         if selection.command_semantics == SEMANTICS_TARGET_POSE:
-            self._physical_command = target
             return target
-        target = np.clip(
+        # Velocity commands are applied in the same frame without a ramp or
+        # acceleration limiter. Keep only the configured magnitude guard.
+        return np.clip(
             target,
             -self._max_velocity_command,
             self._max_velocity_command,
         )
-        if selection.is_standing_transition or selection.high_mode is None:
-            self._physical_command = target
-            return target
-        if not self._config.is_command_ramp_enabled:
-            self._physical_command = target
-            return target
-        max_step = np.asarray(
-            (
-                self._config.command_max_linear_accel
-                * self._config.control_dt,
-                self._config.command_max_linear_accel
-                * self._config.control_dt,
-                self._config.command_max_yaw_accel
-                * self._config.control_dt,
-            ),
-            dtype=np.float32,
-        )
-        delta = np.clip(target - self._physical_command, -max_step, max_step)
-        self._physical_command += delta
-        return self._physical_command
 
     def _blend_model_switch(self, target: np.ndarray, now: float) -> np.ndarray:
         duration = self._config.model_switch_blend_s
         if duration == 0.0:
             return target
         alpha = min((now - self._switch_started_at) / duration, 1.0)
-        return self._switch_from_target + (
+        blended = self._switch_from_target + (
             target - self._switch_from_target
         ) * alpha
+        # The model-switch transition is only for legs and waist. Arm targets
+        # always take effect in the current frame, regardless of active model.
+        blended[self._arm_indices] = target[self._arm_indices]
+        return blended
 
     def _read_robot_state(
         self,

@@ -25,7 +25,6 @@ from .simulator_presets import (
     PresetCatalog,
     VelocityTrajectory,
     load_preset_catalog,
-    sample_arm_transition,
 )
 
 
@@ -94,9 +93,6 @@ class SimulatorNode(Node):
         self._arm_pose = initial_pose
         self._arm_positions = initial_pose.positions
         self._arm_velocities = (0.0,) * len(initial_pose.positions)
-        self._arm_start_positions = initial_pose.positions
-        self._arm_transition_started_at = 0.0
-        self._is_arm_transition_active = False
         self._arm_sequence = monotonic_ns()
         if not sys.stdin.isatty():
             raise RuntimeError("simulator must run in an interactive terminal")
@@ -136,7 +132,6 @@ class SimulatorNode(Node):
             return
         now = monotonic()
         self._update_navigation(now)
-        self._update_arm(now)
         navigation_message = Float32MultiArray()
         navigation_message.data = list(self._navigation_command)
         self._navigation_publisher.publish(navigation_message)
@@ -204,7 +199,7 @@ class SimulatorNode(Node):
             return False
         if key in ARM_POSE_KEYS:
             index = ARM_POSE_KEYS.index(key)
-            self._start_arm_transition(self._catalog.arm_poses[index])
+            self._set_arm_pose(self._catalog.arm_poses[index])
         return False
 
     def _start_velocity_trajectory(
@@ -219,13 +214,10 @@ class SimulatorNode(Node):
             f"{trajectory.description_zh}"
         )
 
-    def _start_arm_transition(self, pose: ArmPose) -> None:
-        now = monotonic()
-        self._update_arm(now)
-        self._arm_start_positions = self._arm_positions
+    def _set_arm_pose(self, pose: ArmPose) -> None:
         self._arm_pose = pose
-        self._arm_transition_started_at = now
-        self._is_arm_transition_active = True
+        self._arm_positions = pose.positions
+        self._arm_velocities = (0.0,) * len(pose.positions)
         self.get_logger().info(
             f"arm pose -> {pose.name}: {pose.description_zh}"
         )
@@ -245,22 +237,6 @@ class SimulatorNode(Node):
             self.get_logger().info(
                 f"velocity trajectory complete -> {trajectory.name}"
             )
-
-    def _update_arm(self, now: float) -> None:
-        if not self._is_arm_transition_active:
-            self._arm_velocities = (0.0,) * len(self._arm_positions)
-            return
-        elapsed_s = now - self._arm_transition_started_at
-        duration_s = self._catalog.arm_transition_duration_s
-        self._arm_positions, self._arm_velocities = sample_arm_transition(
-            self._arm_start_positions,
-            self._arm_pose.positions,
-            elapsed_s,
-            duration_s,
-        )
-        if elapsed_s >= duration_s:
-            self._is_arm_transition_active = False
-            self._arm_velocities = (0.0,) * len(self._arm_positions)
 
     @staticmethod
     def _publish_mode(publisher: object, value: int) -> None:

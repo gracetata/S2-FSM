@@ -173,18 +173,34 @@ ros2 topic pub --rate 20 /hecbot/locomotion/navigation_command \
 ```
 
 控制器不会根据三元组内容猜测速度或位置语义。语义只由 low-level mode 决定。
+速度三元组在收到后的下一控制帧直接写入模型 observation，不做时间插值或加速度
+限幅；仅保留 `max_velocity_command` 的逐分量最大速度保护。
 
 位置 submode 要求导航持续发送骨盆坐标系闭环误差，不接受全局目标坐标，也不会在
 控制器内部计算或累计误差。完整合同、变换公式和数据示例见
 [`docs/NAVIGATION_ADAPTER.md`](docs/NAVIGATION_ADAPTER.md)。
+
+### 持续查看订阅值
+
+已加载 ROS 2 和本项目环境后，用下面一个命令打开 Topic Monitor 窗口：
+
+```bash
+ros2 run rqt_topic rqt_topic
+```
+
+在窗口中展开并勾选以下四项的 value 列，即可持续刷新控制器当前订阅的输入：
+`/hecbot/locomotion/high_level_mode`、
+`/hecbot/locomotion/low_level_mode`、
+`/hecbot/locomotion/navigation_command` 和 `/hecbot/upper_body_cmd`。
+若命令不存在，安装 ROS Jazzy 的 `ros-jazzy-rqt-topic` 包。
 
 ## 键盘整机测试
 
 测试节点会等待 `/hecbot/locomotion/initialized=true`，然后以 20 Hz 持续发布导航
 和双臂输入，频率高于两类输入的超时要求。预设位于
 [`config/simulator_presets.json`](config/simulator_presets.json)，包含四个双臂
-姿态、三条速度轨迹和三个位置目标。双臂姿态之间默认使用 2 秒 minimum-jerk
-轨迹，不会直接跳变。
+姿态、三条速度轨迹和三个位置目标。按下双臂姿态键后，测试节点从下一次发布开始
+直接发送该目标，不生成中间姿态，也不做加速度限幅。
 
 确保机器人周围无人、急停可用且没有其他 `rt/lowcmd` 发布者。终端 1：
 
@@ -233,7 +249,8 @@ ros2 run locomotion_controller locomotion_controller_simulator
 ```
 
 - `selected`：状态机选择的速度或骨盆坐标系位置误差。
-- `model_input`：经过速度限幅/斜坡后实际写入 observation 的三元组；位置模式不做变换。
+- `model_input`：实际写入 observation 的三元组；速度模式只做最大速度幅值保护，
+  不做插值或加速度限幅，位置模式不做变换。
 - `arm_input`：当前有效的双臂位置、速度、权重和序号；无有效双臂消息时为 `null`。
 - `model_output`：ONNX 本帧返回的原始 29 维 action，记录发生在双臂覆盖和模型切换插值之前。
 
@@ -252,11 +269,11 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 1. 按 `v`、`1`、`4`：验证 mode 1 low mode 1 和速度模型。
 2. 按 `p`：观察 low mode `1 → 2` 的 `stand_duration_s` 零速站立；随后按
    `7`、`8` 或 `9` 验证位置模型。
-3. 按 `2`，再按 `z`、`x`、`c`、`b`：验证站立双臂模型和姿态平滑切换。
+3. 按 `2`，再按 `z`、`x`、`c`、`b`：验证站立双臂模型和姿态直接切换。
 4. 按 `3`，再选择双臂姿态：验证行走双臂模型。
 5. 任意阶段按 `0` 验证零速回退，最后按 `q` 退出输入节点。
 
-编辑预设 JSON 时字段不可缺失或增加；数组长度、有限数值、名称唯一性和正持续时间
+编辑预设 JSON 时字段不可缺失或增加；数组长度、有限数值、名称唯一性和持续时间
 都会在测试节点启动前严格校验。使用其他预设文件：
 
 ```bash
@@ -295,9 +312,11 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 - high mode 或 low mode 无法匹配时，立即落入 `free_walk + [0,0,0]`，不会继续
   执行上一业务模式。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3
-  尚未收到有效双臂参数时使用模型切换前最后一帧双臂目标。
+  会作废进入该 mode 之前缓存的双臂参数；收到切换后的第一条有效双臂参数前，
+  每一帧都保持模式切换前最后一帧的双臂目标。
 - 导航或双臂消息超时后不复用陈旧输入。导航变为零，双臂保持上一控制帧的实际目标。
-- 模型切换使用配置的动作融合时间，模型 `previous_action` 在切换时清零。
+- 双臂位置/速度和导航速度都不做时间插值或加速度限幅。模型切换动作融合只作用于
+  腿和腰；模型 `previous_action` 在切换时清零。
 - 控制线程异常或程序退出时发送 `Kp=0, Kd=8` 阻尼命令。
 
 完整运行时结构、时序和配置说明见
@@ -311,4 +330,4 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-这些测试同时覆盖模拟器预设格式、速度轨迹边界和双臂 minimum-jerk 轨迹端点。
+这些测试同时覆盖模拟器预设格式、速度轨迹边界和 mode 2/3 的双臂输入时序。

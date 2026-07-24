@@ -65,7 +65,6 @@ class PositionTarget:
 
 @dataclass(frozen=True)
 class PresetCatalog:
-    arm_transition_duration_s: float
     joint_order_per_arm: tuple[str, ...]
     arm_poses: tuple[ArmPose, ...]
     velocity_trajectories: tuple[VelocityTrajectory, ...]
@@ -81,7 +80,6 @@ def load_preset_catalog(path: str | Path) -> PresetCatalog:
         root,
         {
             "schema",
-            "arm_transition_duration_s",
             "joint_order_per_arm",
             "arm_poses",
             "velocity_trajectories",
@@ -121,44 +119,11 @@ def load_preset_catalog(path: str | Path) -> PresetCatalog:
     _require_unique_names(velocity_trajectories, "velocity_trajectories")
     _require_unique_names(position_targets, "position_targets")
     return PresetCatalog(
-        arm_transition_duration_s=_positive_float(
-            root["arm_transition_duration_s"],
-            "arm_transition_duration_s",
-        ),
         joint_order_per_arm=joint_order,
         arm_poses=arm_poses,
         velocity_trajectories=velocity_trajectories,
         position_targets=position_targets,
     )
-
-
-def sample_arm_transition(
-    start: tuple[float, ...],
-    target: tuple[float, ...],
-    elapsed_s: float,
-    duration_s: float,
-) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Sample a minimum-jerk position and velocity transition."""
-
-    if len(start) != len(target):
-        raise ValueError("arm transition endpoints must have equal length")
-    if duration_s <= 0.0:
-        raise ValueError("arm transition duration must be positive")
-    phase = min(max(elapsed_s / duration_s, 0.0), 1.0)
-    blend = phase**3 * (10.0 + phase * (-15.0 + 6.0 * phase))
-    blend_rate = (
-        30.0 * phase**2 - 60.0 * phase**3 + 30.0 * phase**4
-    ) / duration_s
-    positions = tuple(
-        start_value + (target_value - start_value) * blend
-        for start_value, target_value in zip(start, target)
-    )
-    velocities = tuple(
-        (target_value - start_value) * blend_rate
-        for start_value, target_value in zip(start, target)
-    )
-    return positions, velocities
-
 
 def _load_arm_pose(value: object, index: int) -> ArmPose:
     label = f"arm_poses[{index}]"

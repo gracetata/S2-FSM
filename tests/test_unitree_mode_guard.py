@@ -145,3 +145,49 @@ class UnitreeModeGuardTest(unittest.TestCase):
         self.assertEqual(payload["arm_input"]["weight"], 0.8)
         self.assertEqual(payload["model_output"], list(range(29)))
         self.assertEqual(controller._inference_frame_index, 8)
+
+    def test_velocity_command_is_applied_without_a_ramp(self):
+        import numpy as np
+
+        from locomotion_controller.state_machine import ControlSelection
+
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._max_velocity_command = np.asarray(
+            (0.8, 0.5, 1.57),
+            dtype=np.float32,
+        )
+        selection = ControlSelection(
+            model_name="free_walk",
+            command_semantics="velocity",
+            command=(0.4, -0.2, 0.6),
+            arm_command=None,
+            high_mode=1,
+            low_mode=1,
+            is_standing_transition=False,
+        )
+
+        np.testing.assert_allclose(
+            controller._command_for(selection),
+            np.asarray(selection.command, dtype=np.float32),
+        )
+
+    def test_model_switch_blend_never_interpolates_arm_joints(self):
+        import numpy as np
+
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._config = MagicMock(model_switch_blend_s=1.0)
+        controller._switch_started_at = 1.0
+        controller._switch_from_target = np.zeros(4, dtype=np.float32)
+        controller._arm_indices = np.asarray((1, 3), dtype=np.int64)
+        target = np.asarray((2.0, 4.0, 6.0, 8.0), dtype=np.float32)
+
+        blended = controller._blend_model_switch(target, now=1.5)
+
+        np.testing.assert_allclose(
+            blended,
+            np.asarray((1.0, 4.0, 3.0, 8.0), dtype=np.float32),
+        )
