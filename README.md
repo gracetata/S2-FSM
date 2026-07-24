@@ -230,6 +230,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | `v` | low mode 1，速度模式，同时清零当前导航输入 |
 | `p` | low mode 2，位置模式，同时清零当前导航输入 |
 | `0` | 取消轨迹并持续发布 `[0,0,0]` |
+| `k` | 停止/恢复导航与双臂参数发布；high/low mode 按键始终有效 |
 | `4` | 前进 3 秒后停止 |
 | `5` | 左右横移后停止 |
 | `6` | 左右原地转向后停止 |
@@ -239,6 +240,12 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | `z` / `x` / `c` / `b` | 双臂靠后 / 下垂 / 靠前 / 持物 |
 | `h` | 重新显示帮助 |
 | `q` | 退出测试节点 |
+
+需要让另一个节点独占发布真实导航指令时，先按一次 `k`。模拟器会立即停止发布
+`/hecbot/locomotion/navigation_command` 和 `/hecbot/upper_body_cmd`，并取消其内部
+正在执行的速度轨迹，但 `1/2/3`、`v/p` 仍可用于切换 high/low mode。停止时不会
+额外发布零值；状态机中最后一条模拟参数分别在 `navigation_timeout_s` 和
+`arm_timeout_s` 到期后失效。再次按 `k` 会恢复模拟参数的 20 Hz 发布。
 
 ### 终端调试日志
 
@@ -253,6 +260,40 @@ ros2 run locomotion_controller locomotion_controller_simulator
   不做插值或加速度限幅，位置模式不做变换。
 - `arm_input`：当前有效的双臂位置、速度、权重和序号；无有效双臂消息时为 `null`。
 - `model_output`：ONNX 本帧返回的原始 29 维 action，记录发生在双臂覆盖和模型切换插值之前。
+
+每次启动控制器时，运行子进程的 stdout/stderr 还会完整保存到：
+
+```text
+/home/wenduo/locomotion_controller/log/runtime/runtime_<实际时间>.log
+```
+
+屏幕输出不受影响。日志根目录由严格配置项 `runtime.log_root` 指定。
+
+### ToTarget 复现日志
+
+每次控制线程真正切入 `accurate_arrival`（ToTarget）模型时，会在
+`log/ToTarget/` 新建一个 JSONL 文件。文件名格式为：
+
+```text
+dx_<初始dx>_dy_<初始dy>_yaw_<初始dyaw>_<实际时间>.jsonl
+```
+
+这里的“初始目标”是进入模型第一帧状态机实际选中的三元组；如果该帧尚未收到新位置
+误差，文件名会如实记录 `[0,0,0]`。JSONL 第一行是 `session_start`，包含模型路径和
+SHA256、50 Hz 周期、policy/motor 关节顺序、默认角、增益、缩放参数和 observation
+切片定义。之后每个 ToTarget 控制帧严格写一条 `frame`，包括：
+
+- 墙上时间、单调时钟、全局推理帧号和 LowState tick/新鲜度；
+- 当帧 high/low mode 以及状态机选中的实时 `[dx,dy,dyaw]`；
+- policy order 的实际 29DoF 关节位置、速度和策略使用的 IMU；
+- 完整 96 维 observation、原始 29 维 ONNX 输出和推理耗时；
+- policy order 与 motor order 的最终目标位置、速度、Kp 和 Kd。
+
+这些字段足以把同一份 ONNX 模型的每帧输入输出精确重算，并对齐实机关节反馈与最终
+控制目标。日志不包含机器人接口没有提供、策略也没有读取的世界坐标系绝对基座位置、
+接触力或地面扰动，因此它能复现策略和控制器现象，但仅靠该日志不能保证 MuJoCo
+物理轨迹与实机逐点完全一致。文件由独立线程按顺序写入；队列积压时控制器会报错，
+不会静默丢帧。
 
 high-level 或 low-level mode 真正改变后，控制器终端会输出：
 

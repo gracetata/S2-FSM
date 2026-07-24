@@ -39,6 +39,8 @@ class ControlRuntime:
             config.controller,
             policies,
             self._state_machine,
+            config.runtime.log_root / "ToTarget",
+            config.models["accurate_arrival"],
         )
         try:
             self._controller.take_control_and_start()

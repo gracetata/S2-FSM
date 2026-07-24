@@ -36,6 +36,7 @@ class TopicConfig:
 class RuntimeConfig:
     python_executable: Path
     socket_path: Path
+    log_root: Path
     startup_timeout_s: float
     request_timeout_s: float
     cyclonedds_home: Path
@@ -161,6 +162,7 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
     expected = {
         "python_executable",
         "socket_path",
+        "log_root",
         "startup_timeout_s",
         "request_timeout_s",
         "cyclonedds_home",
@@ -181,6 +183,11 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
     ).expanduser()
     if not socket_path.is_absolute():
         raise ValueError("runtime.socket_path must be absolute")
+    log_root = Path(
+        _nonempty_string(settings["log_root"], "runtime.log_root")
+    ).expanduser()
+    if not log_root.is_absolute():
+        raise ValueError("runtime.log_root must be absolute")
     cyclonedds_home = Path(
         _nonempty_string(
             settings["cyclonedds_home"],
@@ -211,6 +218,7 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
     return RuntimeConfig(
         python_executable=python_executable,
         socket_path=socket_path.resolve(),
+        log_root=log_root.resolve(),
         startup_timeout_s=startup_timeout_s,
         request_timeout_s=request_timeout_s,
         cyclonedds_home=cyclonedds_home,

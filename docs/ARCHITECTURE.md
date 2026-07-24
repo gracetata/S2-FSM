@@ -204,6 +204,10 @@ YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要
 每个段都执行精确 key 集合检查。增加新字段时必须同步修改加载器、本文档和测试；
 拼错字段不会被静默忽略。
 
+`runtime.log_root` 是绝对路径。每次运行的控制子进程 stdout/stderr 保存到其
+`runtime/` 子目录；每次进入 `accurate_arrival` 的 50 Hz 结构化复现日志保存到其
+`ToTarget/` 子目录。
+
 ## 7. 关闭与故障
 
 正常关闭：
@@ -226,4 +230,18 @@ YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要
 发布；速度轨迹结束后自动保持 `[0,0,0]`。双臂姿态使用
 `config/simulator_presets.json` 中的目标值直接切换，不生成中间姿态，发布速度为
 零。进程内双臂序号从系统 monotonic nanosecond 起始，测试节点重启后仍高于同一次
-系统启动中的旧序号。
+系统启动中的旧序号。按 `k` 可同时停止/恢复导航和双臂参数的周期发布；停止不会
+影响 high/low mode 发布，因此模拟器可以只作为模式切换终端，与外部真实导航节点
+并行使用。
+
+## 9. ToTarget 结构化日志
+
+控制线程检测到模型从其他模型切换为 `accurate_arrival` 时，以进入该模型第一帧的
+`[dx,dy,dyaw]` 和墙上时间创建一个独立 JSONL 会话。切出模型或关闭控制器时写入
+`session_end`。每个模型控制帧写入完整 96 维 observation、原始 29 维 action、
+LowState 实际关节位置/速度、策略使用的 IMU、实时位置误差以及最终 policy/motor
+order LowCmd 目标和增益。
+
+JSON 序列化和磁盘 I/O 位于独立有界队列线程，50 Hz 线程只复制当帧不可变数据并
+入队。队列最多缓存 4096 帧；写盘无法跟上或写线程失败时控制线程显式进入故障，
+不会生成看似完整但实际缺帧的日志。

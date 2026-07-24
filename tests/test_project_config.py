@@ -20,6 +20,10 @@ class ProjectConfigTest(unittest.TestCase):
         self.assertTrue(config.runtime.cyclonedds_home.is_dir())
         self.assertEqual(len(config.models), 4)
         self.assertTrue(all(path.is_file() for path in config.models.values()))
+        self.assertEqual(
+            config.runtime.log_root,
+            PROJECT_ROOT / "log",
+        )
         interface_names = {name for _, name in socket.if_nameindex()}
         self.assertIn(config.runtime.network_interface, interface_names)
 

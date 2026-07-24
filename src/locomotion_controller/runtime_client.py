@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
 import signal
 import socket
 import subprocess
-from threading import Lock
+import sys
+from threading import Lock, Thread
+from typing import TextIO
 from time import monotonic, sleep
 
 from .config import PackageConfig
@@ -23,6 +26,9 @@ class RuntimeClient:
         self._config = config
         self._process: subprocess.Popen[bytes] | None = None
         self._request_lock = Lock()
+        self._output_thread: Thread | None = None
+        self._output_error: str | None = None
+        self._terminal_log_path: Path | None = None
 
     def start(self) -> None:
         executable = self._config.runtime.python_executable
@@ -45,18 +51,42 @@ class RuntimeClient:
             str(source_root),
             environment["PYTHONPATH"] if "PYTHONPATH" in environment else "",
         )
-        self._process = subprocess.Popen(
-            [
-                str(executable),
-                "-m",
-                "locomotion_controller.runtime_process",
-                str(self._config.config_path),
-                str(self._config.package_root),
-                str(socket_path),
-            ],
-            env=environment,
-            start_new_session=True,
+        log_directory = self._config.runtime.log_root / "runtime"
+        log_directory.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().astimezone().strftime(
+            "%Y%m%dT%H%M%S.%f%z"
         )
+        self._terminal_log_path = log_directory / f"runtime_{timestamp}.log"
+        output_file = self._terminal_log_path.open(
+            "x",
+            encoding="utf-8",
+            buffering=1,
+        )
+        try:
+            self._process = subprocess.Popen(
+                [
+                    str(executable),
+                    "-m",
+                    "locomotion_controller.runtime_process",
+                    str(self._config.config_path),
+                    str(self._config.package_root),
+                    str(socket_path),
+                ],
+                env=environment,
+                start_new_session=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+        except Exception:
+            output_file.close()
+            raise
+        self._output_thread = Thread(
+            target=self._forward_runtime_output,
+            args=(self._process, output_file),
+            name="runtime-output-recorder",
+            daemon=True,
+        )
+        self._output_thread.start()
         self._wait_until_ready()
 
     def set_high_mode(self, value: int) -> bool:
@@ -131,8 +161,42 @@ class RuntimeClient:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait(timeout=2.0)
+        output_thread = self._output_thread
+        if output_thread is not None:
+            output_thread.join(timeout=2.0)
         self._process = None
+        self._output_thread = None
         self._config.runtime.socket_path.unlink(missing_ok=True)
+        if self._output_error is not None:
+            raise RuntimeError(
+                f"runtime terminal log failed: {self._output_error}"
+            )
+
+    def _forward_runtime_output(
+        self,
+        process: subprocess.Popen[bytes],
+        output_file: TextIO,
+    ) -> None:
+        stream = process.stdout
+        if stream is None:
+            output_file.close()
+            self._output_error = "runtime stdout pipe was not created"
+            return
+        try:
+            while True:
+                line = stream.readline()
+                if not line:
+                    return
+                text = line.decode("utf-8", errors="replace")
+                try:
+                    output_file.write(text)
+                except Exception as error:
+                    self._output_error = str(error)
+                sys.stdout.write(text)
+                sys.stdout.flush()
+        finally:
+            stream.close()
+            output_file.close()
 
     def _require_success(
         self,

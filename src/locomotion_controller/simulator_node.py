@@ -84,6 +84,7 @@ class SimulatorNode(Node):
         )
 
         self._is_controller_initialized = False
+        self._is_parameter_publishing_enabled = True
         self._high_mode: int | None = None
         self._low_mode: int | None = None
         self._navigation_command = ZERO_COMMAND
@@ -130,6 +131,8 @@ class SimulatorNode(Node):
             return
         if not self._is_controller_initialized:
             return
+        if not self._is_parameter_publishing_enabled:
+            return
         now = monotonic()
         self._update_navigation(now)
         navigation_message = Float32MultiArray()
@@ -164,6 +167,9 @@ class SimulatorNode(Node):
             return True
         if key == "h":
             self._print_help()
+            return False
+        if key == "k":
+            self._toggle_parameter_publishing()
             return False
         if key in {"1", "2", "3"}:
             self._high_mode = int(key)
@@ -226,6 +232,21 @@ class SimulatorNode(Node):
         self._velocity_trajectory = None
         self._navigation_command = ZERO_COMMAND
 
+    def _toggle_parameter_publishing(self) -> None:
+        self._is_parameter_publishing_enabled = (
+            not self._is_parameter_publishing_enabled
+        )
+        if self._is_parameter_publishing_enabled:
+            self.get_logger().info(
+                "navigation and arm parameter publishing resumed"
+            )
+            return
+        self._stop_navigation()
+        self.get_logger().warning(
+            "navigation and arm parameter publishing stopped; "
+            "high/low mode keys remain active"
+        )
+
     def _update_navigation(self, now: float) -> None:
         trajectory = self._velocity_trajectory
         if trajectory is None:
@@ -271,6 +292,7 @@ class SimulatorNode(Node):
             "  v: low mode 1 (velocity)",
             "  p: low mode 2 (position)",
             "  0: cancel navigation and publish [0,0,0]",
+            "  k: stop/resume navigation and arm parameter publishing",
             *velocity_lines,
             *position_lines,
             *arm_lines,

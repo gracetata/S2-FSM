@@ -23,6 +23,7 @@ locomotion_controller:
     # The Conda environment contains ONNX Runtime, CycloneDDS and Unitree SDK2.
     python_executable: /home/hecbot/miniconda3/envs/locomotion_controller/bin/python
     socket_path: /tmp/locomotion_controller.sock
+    log_root: /home/wenduo/locomotion_controller/log
     startup_timeout_s: 70.0
     request_timeout_s: 2.0
     cyclonedds_home: /home/hecbot/miniconda3/envs/locomotion_controller

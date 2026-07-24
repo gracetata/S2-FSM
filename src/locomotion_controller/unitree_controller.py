@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from hashlib import sha256
 import json
+from pathlib import Path
 from threading import Event, Lock, Thread
 from time import monotonic, sleep
 
@@ -23,12 +26,14 @@ from .config import ControllerConfig, POLICY_JOINT_COUNT
 from .imu import get_gravity_orientation, transform_torso_imu
 from .policy import OBSERVATION_SIZE, PolicyBank
 from .state_machine import (
+    MODEL_ACCURATE_ARRIVAL,
     MODEL_ARM_STAND,
     MODEL_ARM_WALK,
     SEMANTICS_TARGET_POSE,
     ControlSelection,
     LocomotionStateMachine,
 )
+from .totarget_logger import ToTargetLogger
 
 
 ARM_JOINT_NAMES = (
@@ -65,6 +70,8 @@ class UnitreeController:
         config: ControllerConfig,
         policies: PolicyBank,
         state_machine: LocomotionStateMachine,
+        totarget_log_directory: Path,
+        totarget_model_path: Path,
     ) -> None:
         self._config = config
         self._policies = policies
@@ -76,6 +83,38 @@ class UnitreeController:
         self._has_taken_control = False
         self._command_lock = Lock()
         self._crc = CRC()
+        self._totarget_logger = ToTargetLogger(totarget_log_directory)
+        self._totarget_metadata = {
+            "model": MODEL_ACCURATE_ARRIVAL,
+            "model_path": str(totarget_model_path),
+            "model_sha256": _sha256_file(totarget_model_path),
+            "control_frequency_hz": 1.0 / config.control_dt,
+            "control_dt_s": config.control_dt,
+            "imu_type": config.imu_type,
+            "policy_joint_names": list(config.policy_joint_names),
+            "motor_joint_names": list(config.motor_joint_names),
+            "motor_indices": list(config.motor_indices),
+            "observation_layout": {
+                "angular_velocity": [0, 3],
+                "gravity": [3, 6],
+                "command": [6, 9],
+                "joint_position": [9, 38],
+                "joint_velocity": [38, 67],
+                "previous_action": [67, 96],
+            },
+            "default_angles": list(config.default_angles),
+            "kps": list(config.kps),
+            "kds": list(config.kds),
+            "angular_velocity_scale": config.angular_velocity_scale,
+            "joint_position_scale": config.joint_position_scale,
+            "joint_velocity_scale": config.joint_velocity_scale,
+            "action_scale": config.action_scale,
+            "lowcmd_contract": {
+                "motor_mode": 1,
+                "mode_pr": 0,
+                "tau_feedforward": 0.0,
+            },
+        }
 
         self._motor_to_policy = np.asarray(
             [
@@ -182,8 +221,16 @@ class UnitreeController:
             if thread.is_alive():
                 raise RuntimeError("the 50 Hz control thread did not stop")
         self._thread = None
-        if self._has_taken_control:
-            self._send_damping(self._config.fault_damping_duration_s)
+        log_error: Exception | None = None
+        try:
+            self._totarget_logger.close()
+        except Exception as error:
+            log_error = error
+        finally:
+            if self._has_taken_control:
+                self._send_damping(self._config.fault_damping_duration_s)
+        if log_error is not None:
+            raise log_error
 
     def _receive_low_state(self, message: LowStateHG) -> None:
         self._low_state = message
@@ -262,6 +309,18 @@ class UnitreeController:
                 self._send_damping(self._config.fault_damping_duration_s)
             except Exception as damping_error:
                 self._control_error += f"; damping failed: {damping_error}"
+        finally:
+            try:
+                self._totarget_logger.end_session("control_loop_stopped")
+            except Exception as log_error:
+                if self._control_error is None:
+                    self._control_error = (
+                        f"ToTarget log finalization failed: {log_error}"
+                    )
+                else:
+                    self._control_error += (
+                        f"; ToTarget log finalization failed: {log_error}"
+                    )
 
     def _run_frame(self, now: float) -> None:
         if (
@@ -273,8 +332,20 @@ class UnitreeController:
 
         selection = self._state_machine.select(now)
         if selection.model_name != self._active_model_name:
+            if self._active_model_name == MODEL_ACCURATE_ARRIVAL:
+                self._totarget_logger.end_session(
+                    f"switched_to_{selection.model_name}"
+                )
             self._begin_model_switch(selection.model_name, now)
+            if selection.model_name == MODEL_ACCURATE_ARRIVAL:
+                log_path = self._totarget_logger.start_session(
+                    selection.command,
+                    self._totarget_metadata,
+                )
+                print(f"[TOTARGET_LOG] started {log_path}", flush=True)
 
+        frame_wall_time = datetime.now().astimezone()
+        inference_frame = self._inference_frame_index
         joint_positions, joint_velocities, quaternion, angular_velocity = (
             self._read_robot_state()
         )
@@ -293,9 +364,12 @@ class UnitreeController:
         )
         self._observation[OBS_PREVIOUS_ACTION] = self._previous_action
 
+        inference_started_at = monotonic()
         action = self._policies.get_policy(selection.model_name).infer(
             self._observation
         )
+        inference_duration_s = monotonic() - inference_started_at
+        raw_model_output = action.copy()
         self._log_inference_frame(selection, command, action)
         target_velocity = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         direct_arm_target: np.ndarray | None = None
@@ -337,6 +411,63 @@ class UnitreeController:
             target_velocity[self._policy_to_motor],
         )
         self._send_command()
+        if selection.model_name == MODEL_ACCURATE_ARRIVAL:
+            self._totarget_logger.write_frame(
+                {
+                    "wall_time": frame_wall_time.isoformat(
+                        timespec="microseconds"
+                    ),
+                    "monotonic_time_s": now,
+                    "inference_frame": inference_frame,
+                    "lowstate": {
+                        "tick": int(self._low_state.tick),
+                        "mode_machine": int(self._low_state.mode_machine),
+                        "received_at_monotonic_s": (
+                            self._last_lowstate_received_at
+                        ),
+                        "age_s": now - self._last_lowstate_received_at,
+                    },
+                    "mode": {
+                        "model": selection.model_name,
+                        "high": selection.high_mode,
+                        "low": selection.low_mode,
+                        "standing_transition": (
+                            selection.is_standing_transition
+                        ),
+                    },
+                    "navigation_input": {
+                        "semantics": selection.command_semantics,
+                        "selected": list(selection.command),
+                        "model_input": command.tolist(),
+                    },
+                    "robot_state_policy_order": {
+                        "joint_position": joint_positions.tolist(),
+                        "joint_velocity": joint_velocities.tolist(),
+                        "imu_quaternion": quaternion.tolist(),
+                        "imu_angular_velocity": angular_velocity.tolist(),
+                    },
+                    "observation": self._observation.tolist(),
+                    "model_output": raw_model_output.tolist(),
+                    "inference_duration_s": inference_duration_s,
+                    "command_policy_order": {
+                        "target_position": target.tolist(),
+                        "target_velocity": target_velocity.tolist(),
+                        "kp": kps.tolist(),
+                        "kd": kds.tolist(),
+                    },
+                    "command_motor_order": {
+                        "target_position": target[
+                            self._policy_to_motor
+                        ].tolist(),
+                        "target_velocity": target_velocity[
+                            self._policy_to_motor
+                        ].tolist(),
+                        "kp": kps[self._policy_to_motor].tolist(),
+                        "kd": kds[self._policy_to_motor].tolist(),
+                        "tau_feedforward": [0.0] * POLICY_JOINT_COUNT,
+                    },
+                }
+            )
 
     def _log_inference_frame(
         self,
@@ -495,6 +626,14 @@ class UnitreeController:
         while monotonic() < deadline:
             self._send_command()
             sleep(self._config.control_dt)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as model_file:
+        for chunk in iter(lambda: model_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def enter_debug_mode(timeout_s: float) -> None:
