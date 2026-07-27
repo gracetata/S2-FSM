@@ -232,10 +232,17 @@ class LocomotionStateMachine:
             )
 
         if high_mode == HIGH_MODE_ARM_WALK:
+            # Navigation velocity is the arm-walk model command. The arm
+            # command remains a separate post-inference output override.
+            velocity_command = (
+                fresh_navigation
+                if low_mode == LOW_MODE_VELOCITY
+                else ZERO_COMMAND
+            )
             return ControlSelection(
                 MODEL_ARM_WALK,
                 SEMANTICS_VELOCITY,
-                ZERO_COMMAND,
+                velocity_command,
                 fresh_arm,
                 high_mode,
                 low_mode,

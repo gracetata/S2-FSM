@@ -5,11 +5,16 @@ locomotion_controller:
     # The publisher uses transient-local QoS.
     initialized: /hecbot/locomotion/initialized
 
+    # State feedback: std_msgs/msg/String containing a compact JSON array of
+    # the 29 measured joint angles in motor_joint_names order, published at
+    # 50 Hz after initialization.
+    whole_body_state: /hecbot/whole_body_state
+
     # Application layer: std_msgs/msg/UInt8, legal values 1, 2, 3.
     high_level_mode: /hecbot/locomotion/high_level_mode
 
     # Navigation layer: std_msgs/msg/UInt8, legal values 1, 2.
-    # This value is only interpreted while high-level mode 1 is active.
+    # high mode 1 supports low modes 1/2; high mode 3 uses only low mode 1.
     low_level_mode: /hecbot/locomotion/low_level_mode
 
     # Navigation layer: std_msgs/msg/Float32MultiArray with exactly 3 values.
@@ -132,13 +137,9 @@ locomotion_controller:
       - right_wrist_pitch_joint
       - right_wrist_yaw_joint
 
-    default_angles: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 0.3, -0.2, -0.2, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.97, 0.97, 0.15, -0.15, 0.0, 0.0, 0.0, 0.0]
-    kps: [100.0, 100.0, 200.0, 100.0, 100.0, 40.0, 100.0, 100.0, 40.0, 150.0, 150.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0]
-    kds: [2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 4.0, 4.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-
-    arm_stand_default_angles: [-0.1, -0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.3, 0.3, 0.3, -0.2, -0.2, 0.25, -0.25, 0.0, 0.0, 0.0, 0.0, 0.97, 0.97, 0.15, -0.15, 0.0, 0.0, 0.0, 0.0]
-    arm_stand_kps: [100.0, 100.0, 200.0, 100.0, 100.0, 40.0, 100.0, 100.0, 40.0, 150.0, 150.0, 300.0, 300.0, 40.0, 40.0, 300.0, 300.0, 40.0, 40.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 300.0]
-    arm_stand_kds: [2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 2.0, 2.0, 5.0, 4.0, 4.0, 5.0, 5.0, 2.0, 2.0, 5.0, 5.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
+    # mode 2 uses the full standing_grasp group. mode 3 uses common default
+    # angles with standing_grasp Kp/Kd.
+    impedance_file: impedancepara.yaml
 
     angular_velocity_scale: 1.0
     joint_position_scale: 1.0

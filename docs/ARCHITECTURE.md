@@ -6,7 +6,7 @@
 
 ```text
 ROS 2 进程
-  4 个订阅者 + initialized 发布者
+  4 个订阅者 + initialized/whole_body_state 发布者
                  │ 本机 Unix socket
                  ▼
 ONNX/Unitree 运行进程
@@ -41,8 +41,9 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
    `initialization_stand_duration_s`；当前配置严格为 2 秒。期间持续检查控制线程
    和 LowState，任何故障都会终止初始化。
 10. 完成初始化站立后创建 Unix socket。
-11. ROS 节点收到运行时健康响应后创建四个订阅者，最后发布
-   `/hecbot/locomotion/initialized = true`。
+11. ROS 节点收到运行时健康响应后创建四个订阅者和 50 Hz 状态反馈定时器，最后
+   发布 `/hecbot/locomotion/initialized = true`。定时器从控制进程读取最新实测
+   LowState 关节角并发布 `/hecbot/whole_body_state`。
 
 任何一步失败都不会发布初始化完成。
 
@@ -69,27 +70,31 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | high 1 + low 1 | `free_walk` | 最新导航 `[vx,vy,yaw_rate]` | 模型输出 |
 | high 1 + low 2 | `accurate_arrival` | 最新导航 `[dx,dy,dyaw]` | 模型输出 |
 | high 1 + 未收到 low | `free_walk` | `[0,0,0]` velocity | 模型输出 |
-| high 2 | `arm_stand` | `[0,0,0]` velocity | 外部 14DoF 覆盖 |
-| high 3 | `arm_walk` | `[0,0,0]` velocity | 外部 14DoF 覆盖 |
+| high 2 | `arm_stand` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
+| high 3 + low 1 | `arm_walk` | 最新导航 `[vx,vy,yaw_rate]` | 推理后外部 14DoF 覆盖 |
+| high 3 + 其他/未收到 low | `arm_walk` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
 模型 observation 的 command 三元组是严格零值。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
 
-low-level mode 只在 high mode 1 下解释；在其他 high mode 下收到的值仅被保存，
-不影响当前模型。high mode 1 内从 low mode 1 切换到 low mode 2 时，状态机清除
+high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最新速度命令
+路由到 `arm_walk`。high mode 3 收到 low mode 2 时仍保持 `arm_walk`，但 command
+严格为 `[0,0,0]`。high mode 1 内从 low mode 1 切换到 low mode 2 时，状态机清除
 旧速度参数，先执行 `stand_duration_s` 的 `free_walk + [0,0,0]`，再进入
 `accurate_arrival`。从 low mode 2 切回 low mode 1 不增加等待，但同样先清除旧
 位置参数，因此新速度尚未到达时使用 `[0,0,0]`。
 
-任何未匹配的 high/low mode 分支都选择 `free_walk + [0,0,0]`。非法模式消息会
-返回拒绝结果，同时先把状态机置于这一安全回退状态，而不是保留上一模式。
+high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 的
+非 low-1 分支保持 `arm_walk + [0,0,0]`。非法 high/low mode 数值会返回拒绝结果，
+同时先把状态机置于 `free_walk + [0,0,0]` 安全回退，而不是保留上一模式。
 
 ### 3.3 参数不同步时的确定值
 
 模式和对应参数不要求在同一时刻到达，控制帧也不会使用空参数：
 
-- 进入或切换导航语义后，尚未收到对应新参数时使用 `[0,0,0]`。
+- 进入或切换导航语义后，尚未收到对应新参数时使用 `[0,0,0]`。这同时适用于
+  high 1/low 1、high 1/low 2 和 high 3/low 1。
 - 每次进入 mode 2/3 都作废进入该 mode 之前缓存的双臂消息。尚未收到切换后的
   新双臂参数时使用上一控制帧的实际双臂目标；控制器每帧更新该值，因此输入为空
   或不同步时不会发生关节目标跳变。
@@ -123,14 +128,19 @@ low-level mode 只在 high mode 1 下解释；在其他 high mode 下收到的�
    - `38:67` 29DoF 速度；
    - `67:96` 上一帧实际执行 action。
 6. 调用当前预热 ONNX Session，得到 29 维 action。
-7. mode 2/3 下按 `weight` 将外部双臂位置与切入基线融合，覆盖 action 中的
-   14 个双臂分量；外部双臂速度同样乘以 `weight`。双臂分量绕过模型切换融合，
-   在收到消息的当前帧直接生效。
+7. ONNX 推理完成后，mode 2/3 才按 `weight` 将外部双臂位置与切入基线融合，
+   覆盖模型输出 action 中的 14 个双臂分量；外部双臂速度同样乘以 `weight`。
+   外部双臂消息不是当前帧模型的独立输入。双臂分量绕过模型切换融合，在收到消息
+   的当前帧直接生效。
 8. 仅对模型切换前后的腿、腰目标关节位置做线性融合。
-9. 转为 Unitree motor order，写入位置、速度、Kp、Kd 和 CRC。
-10. 发布唯一一帧 `rt/lowcmd`，等待下一个单调时钟 deadline。
+9. 用覆盖后最终目标反算实际执行 action，保存为下一帧 observation 的
+   `previous_action`；因此该切片包含双臂覆盖后的实际 action。
+10. 转为 Unitree motor order，写入位置、速度、Kp、Kd 和 CRC。
+11. 发布唯一一帧 `rt/lowcmd`，等待下一个单调时钟 deadline。
 
-mode 2 使用 `arm_stand_*` 的默认角和增益；其他三个模型使用通用参数。
+mode 2 使用 `impedancepara.yaml` 中的 `*_standing_grasp` 默认角和 Kp/Kd。
+mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
+`kps_standing_grasp/kds_standing_grasp`。初始化、过渡和 mode 1 使用通用 Kp/Kd。
 
 ## 5. ROS 接口
 
@@ -150,7 +160,8 @@ mode 2 使用 `arm_stand_*` 的默认角和增益；其他三个模型使用通�
 - 合法值：`1` 速度、`2` 位置
 - 发布者：导航脚本
 
-状态机不从导航数值字段推断 submode。
+high mode 1 支持 low mode 1/2；high mode 3 只使用 low mode 1。状态机不从导航
+数值字段推断 submode。
 
 ### 5.3 导航输入
 
@@ -159,12 +170,12 @@ mode 2 使用 `arm_stand_*` 的默认角和增益；其他三个模型使用通�
 - 长度：恰好 3
 - 发布者：导航脚本
 
-low mode 1 时单位为 `[m/s, m/s, rad/s]`；low mode 2 时单位为
-`[m, m, rad]`。速度命令最终按 `max_velocity_command` 逐分量限制；位置误差不套用
-速度限制。速度命令没有时间插值或加速度限幅，收到后在下一控制帧直接写入
-observation。
+high 1/low 1 和 high 3/low 1 时单位为 `[m/s, m/s, rad/s]`；high 1/low 2 时
+单位为 `[m, m, rad]`。速度命令最终按 `max_velocity_command` 逐分量限制；位置
+误差不套用速度限制。速度命令没有时间插值或加速度限幅，收到后在下一控制帧直接
+写入当前模型 observation 的 command 切片。
 
-### 5.4 双臂输入
+### 5.4 双臂输出覆盖命令
 
 - Topic：`topics.arm_command`
 - 类型：`std_msgs/msg/String`
@@ -182,6 +193,11 @@ JSON 合同：
 
 所有字段必填，不接受别名、缺省值或额外字段。
 
+该消息不是当前帧 ONNX 的独立输入。控制器在推理结束后才读取它并覆盖 14 个双臂
+输出。覆盖后的实际 action 会按策略合同进入下一帧 observation 的
+`previous_action`；机器人运动后产生的实测关节反馈也会正常出现在
+joint-position observation 中。
+
 ### 5.5 初始化输出
 
 - Topic：`topics.initialized`
@@ -190,6 +206,20 @@ JSON 合同：
 - 值：只有完整初始化成功后才发布 `true`
 
 “完整初始化”包含首帧 LowCmd 后的 2 秒 `free_walk + [0,0,0]` 健康站立。
+
+### 5.6 全身关节角输出
+
+- Topic：`topics.whole_body_state`
+- 类型：`std_msgs/msg/String`
+- 频率：50 Hz（ROS 定时器周期与 `controller.control_dt=0.02` 相同）
+- 内容：恰好 29 个有限浮点数的紧凑 JSON 数组，单位 rad
+- 数据源：Unitree `rt/lowstate` 的实测 `motor_state[].q`
+- 顺序：严格等于 `controller.motor_joint_names`
+
+该输出是关节反馈角，不是本帧 LowCmd 的目标角。配置加载器要求
+`motor_joint_names` 与公开接口的 29 关节顺序完全一致，避免配置变化静默改变数组
+语义。ROS 进程通过现有本机 Unix socket 读取控制进程中的最新快照；返回维度错误或
+出现非有限数值时该帧不发布，并记录错误。
 
 ## 6. 配置原则
 
@@ -201,8 +231,11 @@ YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要
 - `models`
 - `controller`
 
-每个段都执行精确 key 集合检查。增加新字段时必须同步修改加载器、本文档和测试；
-拼错字段不会被静默忽略。
+每个段都执行精确 key 集合检查。`controller.impedance_file` 指向第二个严格 YAML；
+当前为包根目录的 `impedancepara.yaml`。它必须只包含通用和 standing-grasp 两组
+default angles、Kp、Kd，共六个 29 维数组。mode 2 使用完整 standing-grasp 组；
+mode 3 使用通用 default angles 和 standing-grasp Kp/Kd；其他模式和初始化使用
+通用组。增加新字段时必须同步修改加载器、本文档和测试；拼错字段不会被静默忽略。
 
 `runtime.log_root` 是绝对路径。每次运行的控制子进程 stdout/stderr 保存到其
 `runtime/` 子目录；每次进入 `accurate_arrival` 的 50 Hz 结构化复现日志保存到其
@@ -224,14 +257,17 @@ YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要
 
 `locomotion_controller_simulator` 是独立 ROS 2 输入节点，不接触 Unitree DDS，也不
 发布 `LowCmd`。它订阅 transient-local 的初始化 topic，只有控制器完成模型预热、
-首帧发送和初始化站立后才开始发布四类上游输入。
+首帧发送和初始化站立后才允许键盘选择结果发往状态机。
 
-测试节点以 20 Hz 刷新导航三元组和严格双臂 JSON。high/low mode 只在键盘选择时
-发布；速度轨迹结束后自动保持 `[0,0,0]`。双臂姿态使用
+测试节点默认关闭导航和双臂参数发布，只允许 high/low mode 键生效；按一次 `k`
+后才以 20 Hz 刷新导航三元组和严格双臂 JSON。high/low mode 只在键盘选择时发布；
+速度轨迹结束后自动保持 `[0,0,0]`。双臂姿态使用
 `config/simulator_presets.json` 中的目标值直接切换，不生成中间姿态，发布速度为
-零。进程内双臂序号从系统 monotonic nanosecond 起始，测试节点重启后仍高于同一次
-系统启动中的旧序号。按 `k` 可同时停止/恢复导航和双臂参数的周期发布；停止不会
-影响 high/low mode 发布，因此模拟器可以只作为模式切换终端，与外部真实导航节点
+零。其中 `z/x/c` 与 `models/walk_with_object_arm_pose_set.json` 的三个姿态一致，
+是 high mode 3 的推荐持物行走预设；`b` 只是额外的接口联调姿态。进程内双臂序号
+从系统 monotonic nanosecond 起始，测试节点重启后仍高于同一次
+系统启动中的旧序号。按 `k` 可同时开始/停止导航和双臂参数的周期发布；停止不会
+影响 high/low mode 发布，因此默认即可只作为模式切换终端，与外部真实导航节点
 并行使用。
 
 ## 9. ToTarget 结构化日志

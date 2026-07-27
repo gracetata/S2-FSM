@@ -15,6 +15,11 @@ PRESET_FILE = (
     / "config"
     / "simulator_presets.json"
 )
+ARM_WALK_POSE_FILE = (
+    Path(__file__).resolve().parents[1]
+    / "models"
+    / "walk_with_object_arm_pose_set.json"
+)
 
 
 class SimulatorPresetsTest(unittest.TestCase):
@@ -26,6 +31,24 @@ class SimulatorPresetsTest(unittest.TestCase):
         self.assertEqual(len(catalog.position_targets), 3)
         self.assertTrue(
             all(len(pose.positions) == 14 for pose in catalog.arm_poses)
+        )
+
+    def test_first_three_arm_poses_match_arm_walk_model_presets(self):
+        catalog = load_preset_catalog(PRESET_FILE)
+        source = json.loads(ARM_WALK_POSE_FILE.read_text(encoding="utf-8"))
+
+        expected = tuple(
+            tuple(pose["left"] + pose["right"])
+            for pose in source["poses"]
+        )
+        actual = tuple(
+            pose.positions for pose in catalog.arm_poses[:3]
+        )
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            tuple(pose.name for pose in catalog.arm_poses[:3]),
+            ("back", "down", "front"),
         )
 
     def test_velocity_trajectory_finishes_at_zero(self):

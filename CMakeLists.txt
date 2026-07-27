@@ -17,7 +17,7 @@ install(
 )
 
 install(
-  FILES README.md
+  FILES README.md impedancepara.yaml
   DESTINATION share/${PROJECT_NAME}
 )
 

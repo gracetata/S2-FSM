@@ -1,7 +1,8 @@
-"""ROS 2 boundary for the four upstream messages."""
+"""ROS 2 boundary for upstream commands and controller state feedback."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -35,6 +36,11 @@ class LocomotionControllerNode(Node):
             self._config.topics.initialized,
             initialized_qos,
         )
+        self._whole_body_state_publisher = self.create_publisher(
+            String,
+            self._config.topics.whole_body_state,
+            self._config.topics.queue_depth,
+        )
         self._runtime = RuntimeClient(self._config)
         try:
             self._runtime.start()
@@ -67,6 +73,11 @@ class LocomotionControllerNode(Node):
             self._receive_arm,
             queue_depth,
         )
+        self._whole_body_state_error_logged = False
+        self._whole_body_state_timer = self.create_timer(
+            self._config.controller.control_dt,
+            self._publish_whole_body_state,
+        )
 
         initialized = Bool()
         initialized.data = True
@@ -74,6 +85,30 @@ class LocomotionControllerNode(Node):
         self.get_logger().info(
             "four ONNX models are ready; initialization stand is complete"
         )
+
+    def _publish_whole_body_state(self) -> None:
+        try:
+            positions = self._runtime.get_whole_body_positions()
+            message = String()
+            message.data = json.dumps(
+                positions,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            self._whole_body_state_publisher.publish(message)
+            self._whole_body_state_error_logged = False
+        except (
+            ConnectionError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            if not self._whole_body_state_error_logged:
+                self.get_logger().error(
+                    f"whole-body state publication failed: {error}"
+                )
+                self._whole_body_state_error_logged = True
 
     def destroy_node(self) -> bool:
         try:

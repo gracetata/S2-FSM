@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+from math import isfinite
+from numbers import Real
 import os
 from pathlib import Path
 import signal
@@ -14,7 +16,7 @@ from threading import Lock, Thread
 from typing import TextIO
 from time import monotonic, sleep
 
-from .config import PackageConfig
+from .config import POLICY_JOINT_COUNT, PackageConfig
 from .protocol import ArmCommand
 
 
@@ -103,6 +105,24 @@ class RuntimeClient:
 
     def status(self) -> dict[str, object]:
         return self.request("status")
+
+    def get_whole_body_positions(self) -> tuple[float, ...]:
+        response = self._require_success("whole_body_state")
+        positions = response.get("positions")
+        if not isinstance(positions, list) or len(positions) != POLICY_JOINT_COUNT:
+            raise RuntimeError(
+                "runtime whole-body state must contain exactly 29 positions"
+            )
+        if not all(
+            isinstance(value, Real)
+            and not isinstance(value, bool)
+            and isfinite(float(value))
+            for value in positions
+        ):
+            raise RuntimeError(
+                "runtime whole-body state contains a non-finite position"
+            )
+        return tuple(float(value) for value in positions)
 
     def request(
         self,

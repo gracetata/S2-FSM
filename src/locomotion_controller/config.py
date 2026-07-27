@@ -20,11 +20,43 @@ MODEL_NAMES = (
 )
 POLICY_JOINT_COUNT = 29
 COMMAND_SIZE = 3
+WHOLE_BODY_JOINT_NAMES = (
+    "left_hip_pitch_joint",
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_pitch_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_knee_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+    "waist_yaw_joint",
+    "waist_roll_joint",
+    "waist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
+    "right_wrist_yaw_joint",
+)
 
 
 @dataclass(frozen=True)
 class TopicConfig:
     initialized: str
+    whole_body_state: str
     high_level_mode: str
     low_level_mode: str
     navigation_command: str
@@ -71,6 +103,7 @@ class ControllerConfig:
     motor_indices: tuple[int, ...]
     policy_joint_names: tuple[str, ...]
     motor_joint_names: tuple[str, ...]
+    impedance_file: Path
     default_angles: tuple[float, ...]
     kps: tuple[float, ...]
     kds: tuple[float, ...]
@@ -122,7 +155,10 @@ def load_config(
         _mapping(package["models"], "models"),
         resolved_package_root,
     )
-    controller = _load_controller(_mapping(package["controller"], "controller"))
+    controller = _load_controller(
+        _mapping(package["controller"], "controller"),
+        resolved_package_root,
+    )
     return PackageConfig(
         config_path=config_path,
         package_root=resolved_package_root,
@@ -137,6 +173,7 @@ def load_config(
 def _load_topics(settings: dict[str, Any]) -> TopicConfig:
     expected = {
         "initialized",
+        "whole_body_state",
         "high_level_mode",
         "low_level_mode",
         "navigation_command",
@@ -276,7 +313,10 @@ def _load_models(
     return models
 
 
-def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
+def _load_controller(
+    settings: dict[str, Any],
+    package_root: Path,
+) -> ControllerConfig:
     expected = {
         "control_dt",
         "imu_type",
@@ -293,12 +333,7 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         "motor_indices",
         "policy_joint_names",
         "motor_joint_names",
-        "default_angles",
-        "kps",
-        "kds",
-        "arm_stand_default_angles",
-        "arm_stand_kps",
-        "arm_stand_kds",
+        "impedance_file",
         "angular_velocity_scale",
         "joint_position_scale",
         "joint_velocity_scale",
@@ -350,20 +385,30 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         raise ValueError("controller.policy_joint_names must be unique")
     if set(policy_joint_names) != set(motor_joint_names):
         raise ValueError("policy and motor joint names must contain the same joints")
+    if motor_joint_names != WHOLE_BODY_JOINT_NAMES:
+        raise ValueError(
+            "controller.motor_joint_names must match the whole-body state "
+            "interface order"
+        )
 
-    kps = _float_vector(settings["kps"], "controller.kps", POLICY_JOINT_COUNT)
-    kds = _float_vector(settings["kds"], "controller.kds", POLICY_JOINT_COUNT)
-    arm_stand_kps = _float_vector(
-        settings["arm_stand_kps"],
-        "controller.arm_stand_kps",
-        POLICY_JOINT_COUNT,
-    )
-    arm_stand_kds = _float_vector(
-        settings["arm_stand_kds"],
-        "controller.arm_stand_kds",
-        POLICY_JOINT_COUNT,
-    )
-    if any(value < 0.0 for value in (*kps, *kds, *arm_stand_kps, *arm_stand_kds)):
+    impedance_file = Path(
+        _nonempty_string(
+            settings["impedance_file"],
+            "controller.impedance_file",
+        )
+    ).expanduser()
+    if not impedance_file.is_absolute():
+        impedance_file = package_root / impedance_file
+    impedance_file = impedance_file.resolve()
+    impedance = _load_impedance_parameters(impedance_file)
+    kps = impedance["kps"]
+    kds = impedance["kds"]
+    arm_stand_kps = impedance["kps_standing_grasp"]
+    arm_stand_kds = impedance["kds_standing_grasp"]
+    if any(
+        value < 0.0
+        for value in (*kps, *kds, *arm_stand_kps, *arm_stand_kds)
+    ):
         raise ValueError("controller gains cannot be negative")
     max_velocity_command = _float_vector(
         settings["max_velocity_command"],
@@ -410,18 +455,13 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         motor_indices=motor_indices,
         policy_joint_names=policy_joint_names,
         motor_joint_names=motor_joint_names,
-        default_angles=_float_vector(
-            settings["default_angles"],
-            "controller.default_angles",
-            POLICY_JOINT_COUNT,
-        ),
+        impedance_file=impedance_file,
+        default_angles=impedance["default_angles"],
         kps=kps,
         kds=kds,
-        arm_stand_default_angles=_float_vector(
-            settings["arm_stand_default_angles"],
-            "controller.arm_stand_default_angles",
-            POLICY_JOINT_COUNT,
-        ),
+        arm_stand_default_angles=impedance[
+            "default_angles_standing_grasp"
+        ],
         arm_stand_kps=arm_stand_kps,
         arm_stand_kds=arm_stand_kds,
         angular_velocity_scale=_positive_float(
@@ -442,6 +482,34 @@ def _load_controller(settings: dict[str, Any]) -> ControllerConfig:
         ),
         max_velocity_command=max_velocity_command,
     )
+
+
+def _load_impedance_parameters(
+    impedance_file: Path,
+) -> dict[str, tuple[float, ...]]:
+    if not impedance_file.is_file():
+        raise ValueError(
+            f"controller.impedance_file is not a file: {impedance_file}"
+        )
+    root = yaml.safe_load(impedance_file.read_text(encoding="utf-8"))
+    settings = _mapping(root, "impedance configuration")
+    expected = {
+        "default_angles",
+        "kps",
+        "kds",
+        "default_angles_standing_grasp",
+        "kps_standing_grasp",
+        "kds_standing_grasp",
+    }
+    _require_keys(settings, expected, "impedance configuration")
+    return {
+        key: _float_vector(
+            settings[key],
+            f"impedance configuration.{key}",
+            POLICY_JOINT_COUNT,
+        )
+        for key in expected
+    }
 
 
 def _mapping(value: object, label: str) -> dict[str, Any]:

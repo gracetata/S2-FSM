@@ -180,6 +180,15 @@ class UnitreeController:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def whole_body_positions(self) -> tuple[float, ...]:
+        """Return measured joint angles in the public motor joint order."""
+
+        low_state = self._low_state
+        return tuple(
+            float(low_state.motor_state[index].q)
+            for index in self._config.motor_indices
+        )
+
     def take_control_and_start(self) -> None:
         enter_debug_mode(self._config.motion_release_timeout_s)
         self._has_taken_control = True
@@ -399,9 +408,10 @@ class UnitreeController:
             # Arm commands are never temporally interpolated. With no command
             # for this mode, direct_arm_target is the previous frame target.
             target[self._arm_indices] = direct_arm_target
-        self._previous_action = (
-            target - default_angles
-        ) / self._config.action_scale
+        self._previous_action = self._previous_action_for(
+            target,
+            default_angles,
+        )
         self._last_target = target.copy()
 
         self._write_targets(
@@ -476,7 +486,9 @@ class UnitreeController:
         model_output: np.ndarray,
     ) -> None:
         arm_command = selection.arm_command
-        arm_input = None if arm_command is None else arm_command.to_payload()
+        arm_override = (
+            None if arm_command is None else arm_command.to_payload()
+        )
         payload = {
             "event": "policy_inference",
             "frame": self._inference_frame_index,
@@ -489,7 +501,7 @@ class UnitreeController:
                 "selected": list(selection.command),
                 "model_input": model_command.tolist(),
             },
-            "arm_input": arm_input,
+            "arm_output_override": arm_override,
             "model_output": model_output.tolist(),
         }
         print(
@@ -515,7 +527,25 @@ class UnitreeController:
                 self._arm_stand_kps,
                 self._arm_stand_kds,
             )
+        if selection.model_name == MODEL_ARM_WALK:
+            return (
+                self._default_angles,
+                self._arm_stand_kps,
+                self._arm_stand_kds,
+            )
         return self._default_angles, self._kps, self._kds
+
+    def _previous_action_for(
+        self,
+        target: np.ndarray,
+        default_angles: np.ndarray,
+    ) -> np.ndarray:
+        # previous_action represents the action that was actually executed.
+        # For arm modes this intentionally includes the post-inference external
+        # arm output override from target.
+        return (
+            target - default_angles
+        ) / self._config.action_scale
 
     def _command_for(self, selection: ControlSelection) -> np.ndarray:
         target = np.asarray(selection.command, dtype=np.float32)

@@ -57,6 +57,13 @@ class ControlRuntime:
             _require_request_keys(request, {"operation"})
             return self._status()
         self._require_healthy()
+        if operation == "whole_body_state":
+            _require_request_keys(request, {"operation"})
+            response = self._response(True, "whole-body state is ready")
+            response["positions"] = list(
+                self._controller.whole_body_positions()
+            )
+            return response
         if operation == "high_mode":
             _require_request_keys(request, {"operation", "value"})
             changed = self._state_machine.set_high_mode(

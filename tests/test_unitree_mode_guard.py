@@ -1,5 +1,6 @@
 from importlib.util import find_spec
 import json
+from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -141,8 +142,8 @@ class UnitreeModeGuardTest(unittest.TestCase):
             [0.2, 0.0, -0.1],
         )
         self.assertEqual(payload["navigation_input"]["semantics"], "velocity")
-        self.assertEqual(payload["arm_input"]["sequence"], 9)
-        self.assertEqual(payload["arm_input"]["weight"], 0.8)
+        self.assertEqual(payload["arm_output_override"]["sequence"], 9)
+        self.assertEqual(payload["arm_output_override"]["weight"], 0.8)
         self.assertEqual(payload["model_output"], list(range(29)))
         self.assertEqual(controller._inference_frame_index, 8)
 
@@ -171,6 +172,76 @@ class UnitreeModeGuardTest(unittest.TestCase):
         np.testing.assert_allclose(
             controller._command_for(selection),
             np.asarray(selection.command, dtype=np.float32),
+        )
+
+    def test_whole_body_positions_follow_configured_motor_order(self):
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._config = SimpleNamespace(motor_indices=(2, 0, 1))
+        controller._low_state = SimpleNamespace(
+            motor_state=(
+                SimpleNamespace(q=0.1),
+                SimpleNamespace(q=0.2),
+                SimpleNamespace(q=0.3),
+            )
+        )
+
+        self.assertEqual(
+            controller.whole_body_positions(),
+            (0.3, 0.1, 0.2),
+        )
+
+    def test_arm_modes_share_dedicated_gains(self):
+        from locomotion_controller.state_machine import (
+            MODEL_ARM_STAND,
+            MODEL_ARM_WALK,
+        )
+
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        common = ("common_angles", "common_kp", "common_kd")
+        standing = ("standing_angles", "standing_kp", "standing_kd")
+        (
+            controller._default_angles,
+            controller._kps,
+            controller._kds,
+        ) = common
+        (
+            controller._arm_stand_default_angles,
+            controller._arm_stand_kps,
+            controller._arm_stand_kds,
+        ) = standing
+
+        arm_stand = SimpleNamespace(model_name=MODEL_ARM_STAND)
+        arm_walk = SimpleNamespace(model_name=MODEL_ARM_WALK)
+        self.assertEqual(controller._parameters_for(arm_stand), standing)
+        self.assertEqual(
+            controller._parameters_for(arm_walk),
+            ("common_angles", "standing_kp", "standing_kd"),
+        )
+
+    def test_previous_action_uses_post_override_executed_action(self):
+        import numpy as np
+
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._config = SimpleNamespace(action_scale=1.0)
+        target_after_override = np.asarray(
+            (1.0, 20.0, 3.0, 40.0),
+            dtype=np.float32,
+        )
+
+        previous_action = controller._previous_action_for(
+            target_after_override,
+            np.zeros(4, dtype=np.float32),
+        )
+
+        np.testing.assert_allclose(
+            previous_action,
+            target_after_override,
         )
 
     def test_model_switch_blend_never_interpolates_arm_joints(self):

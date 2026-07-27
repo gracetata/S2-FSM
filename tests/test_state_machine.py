@@ -97,6 +97,39 @@ class StateMachineTest(unittest.TestCase):
         self.assertFalse(selection.is_standing_transition)
         self.assertEqual(selection.command, ZERO_COMMAND)
 
+    def test_mode_three_routes_low_one_velocity_and_arm_override(self):
+        arm = ArmCommand(1, (0.1,) * 14, (0.2,) * 14, 0.8)
+        self.machine.set_low_mode(LOW_MODE_VELOCITY, now=1.0)
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.0)
+        self.machine.set_navigation_command((0.3, -0.1, 0.2), now=1.1)
+        self.machine.set_arm_command(arm, now=1.1)
+
+        selection = self.machine.select(now=1.1)
+
+        self.assertEqual(selection.model_name, MODEL_ARM_WALK)
+        self.assertEqual(selection.command, (0.3, -0.1, 0.2))
+        self.assertEqual(selection.arm_command, arm)
+
+    def test_mode_three_ignores_low_two_navigation(self):
+        self.machine.set_low_mode(LOW_MODE_TARGET_POSE, now=1.0)
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.0)
+        self.machine.set_navigation_command((0.5, 0.1, 0.2), now=1.1)
+
+        selection = self.machine.select(now=1.1)
+
+        self.assertEqual(selection.model_name, MODEL_ARM_WALK)
+        self.assertEqual(selection.command, ZERO_COMMAND)
+
+    def test_mode_three_requires_velocity_received_after_mode_entry(self):
+        self.machine.set_low_mode(LOW_MODE_VELOCITY, now=1.0)
+        self.machine.set_navigation_command((0.3, 0.0, 0.0), now=1.0)
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.1)
+
+        selection = self.machine.select(now=1.1)
+
+        self.assertEqual(selection.model_name, MODEL_ARM_WALK)
+        self.assertEqual(selection.command, ZERO_COMMAND)
+
     def test_arm_mode_waits_for_a_pose_received_after_mode_entry(self):
         old_arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)
         new_arm = ArmCommand(2, (0.2,) * 14, (0.0,) * 14, 1.0)
@@ -183,10 +216,17 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(self.machine.select(now=1.251).command, ZERO_COMMAND)
 
         arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)
+        self.machine.set_low_mode(LOW_MODE_VELOCITY, now=2.0)
         self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=2.0)
+        self.machine.set_navigation_command((0.2, 0.0, 0.1), now=2.0)
         self.machine.set_arm_command(arm, now=2.0)
+        self.assertEqual(
+            self.machine.select(now=2.19).command,
+            (0.2, 0.0, 0.1),
+        )
         self.assertEqual(self.machine.select(now=2.19).arm_command, arm)
         self.assertIsNone(self.machine.select(now=2.201).arm_command)
+        self.assertEqual(self.machine.select(now=2.251).command, ZERO_COMMAND)
 
     def test_arm_sequence_must_increase(self):
         command = ArmCommand(2, (0.0,) * 14, (0.0,) * 14, 0.5)

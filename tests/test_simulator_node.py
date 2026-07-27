@@ -9,11 +9,17 @@ HAS_ROS_DEPENDENCIES = (
     and find_spec("rclpy") is not None
 )
 if HAS_ROS_DEPENDENCIES:
-    from locomotion_controller.simulator_node import SimulatorNode
+    from locomotion_controller.simulator_node import (
+        PARAMETER_PUBLISHING_ENABLED_AT_STARTUP,
+        SimulatorNode,
+    )
 
 
 @unittest.skipUnless(HAS_ROS_DEPENDENCIES, "ROS 2 Python packages are required")
 class SimulatorNodeTest(unittest.TestCase):
+    def test_parameter_publishing_starts_disabled(self):
+        self.assertFalse(PARAMETER_PUBLISHING_ENABLED_AT_STARTUP)
+
     def test_parameter_publishing_can_be_stopped_and_resumed(self):
         node = SimpleNamespace(
             _is_parameter_publishing_enabled=True,

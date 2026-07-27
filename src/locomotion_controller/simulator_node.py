@@ -32,6 +32,7 @@ PUBLISH_PERIOD_S = 0.05
 VELOCITY_KEYS = ("4", "5", "6")
 POSITION_KEYS = ("7", "8", "9")
 ARM_POSE_KEYS = ("z", "x", "c", "b")
+PARAMETER_PUBLISHING_ENABLED_AT_STARTUP = False
 
 
 class SimulatorNode(Node):
@@ -84,7 +85,11 @@ class SimulatorNode(Node):
         )
 
         self._is_controller_initialized = False
-        self._is_parameter_publishing_enabled = True
+        # Start in the same state as after pressing k: mode keys work, while
+        # navigation and arm parameters remain silent until explicitly enabled.
+        self._is_parameter_publishing_enabled = (
+            PARAMETER_PUBLISHING_ENABLED_AT_STARTUP
+        )
         self._high_mode: int | None = None
         self._low_mode: int | None = None
         self._navigation_command = ZERO_COMMAND
@@ -282,17 +287,28 @@ class SimulatorNode(Node):
             )
         ]
         arm_lines = [
-            f"  {key}: arms {pose.name} - {pose.description_zh}"
-            for key, pose in zip(ARM_POSE_KEYS, self._catalog.arm_poses)
+            (
+                f"  {key}: arms {pose.name} - {pose.description_zh}"
+                + (
+                    " [recommended arm-walk model preset]"
+                    if index < 3
+                    else " [extra integration-test pose]"
+                )
+            )
+            for index, (key, pose) in enumerate(
+                zip(ARM_POSE_KEYS, self._catalog.arm_poses)
+            )
         ]
         lines = [
             "",
             "Keyboard controls:",
-            "  1/2/3: high mode",
-            "  v: low mode 1 (velocity)",
-            "  p: low mode 2 (position)",
+            "  1/2: high mode 1/2",
+            "  3: high mode 3 (velocity requires low mode 1 / key v)",
+            "  v: low mode 1 (velocity for high modes 1 and 3)",
+            "  p: low mode 2 (position for high mode 1 only)",
             "  0: cancel navigation and publish [0,0,0]",
-            "  k: stop/resume navigation and arm parameter publishing",
+            "  k: start/stop navigation and arm parameter publishing "
+            "(starts stopped)",
             *velocity_lines,
             *position_lines,
             *arm_lines,

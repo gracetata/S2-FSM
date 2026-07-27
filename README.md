@@ -3,7 +3,8 @@
 本项目是 Unitree G1 29DoF 的三模式有限状态机。入口为
 `scripts/locomotion_controller_node`。程序启动时一次性加载并预热四个 ONNX
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
-`free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息。
+`free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
+以 50 Hz 发布实测 29DoF 关节角。
 
 实机接管前，程序会读取当前 MotionSwitcher 状态。无论当前 Loco FSM ID 是什么，
 只要仍有高层模式，程序就调用 `ReleaseMode()`，并确认 MotionSwitcher 模式名严格
@@ -16,11 +17,16 @@
 | --- | --- | --- | --- |
 | `1` 导航 | `1` 速度 | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
 | `1` 导航 | `2` 位置 | `accurate_arrival.onnx` | 导航三元组 `[dx_body, dy_body, dyaw]` |
-| `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂位置、速度、权重 |
-| `3` 双臂行走 | 不使用 | `walk_with_object.onnx` | 14DoF 双臂位置、速度、权重 |
+| `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂输出覆盖 |
+| `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
 
-按当前接口合同，mode 2 和 mode 3 不读取导航输入；两者给模型的运动命令均为
-`[0, 0, 0]`。`arm_walk` 模型负责腿腰策略，双臂关节由操作侧命令覆盖。
+mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 只接受 low mode 1
+的导航速度三元组，并把它写入 `arm_walk` 模型的 command observation；未收到
+low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
+
+双臂消息不是当前帧 ONNX 的独立输入。控制器先完成模型推理，再用外部 14DoF
+双臂位置和速度覆盖模型输出中的双臂关节。覆盖后实际执行的完整 action 会按策略
+合同写入下一帧 observation 的 `previous_action`。
 
 应用层切换到 mode 1 或 mode 2 时，控制器先选择 `free_walk`，向模型输入严格的
 零速度并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3
@@ -29,6 +35,13 @@
 high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
 `stand_duration_s` 零速站立。切换瞬间旧的速度三元组会被清除；如果位置参数尚未
 到达，位置模型以 `[0,0,0]` 启动，不会把旧速度解释成位置误差。
+
+关节默认角、Kp 和 Kd 从根目录
+[`impedancepara.yaml`](impedancepara.yaml) 严格加载。mode 2 使用
+`standing_grasp` 专用默认角和增益。mode 3 使用通用默认角，但 Kp/Kd 与 mode 2
+完全相同；初始化、站立过渡和 mode 1 使用通用 Kp/Kd。
+文件必须保留六个 29 维数组，缺字段、额外字段、长度错误、非有限值或负增益都会
+使启动失败。
 
 ## 启动
 
@@ -57,8 +70,9 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 
 ### 修改代码后重新编译
 
-先停止正在运行的控制器和键盘模拟器。每次修改代码、配置、模型、launch 文件、
-`CMakeLists.txt` 或 `package.xml` 后，在 NUC 上执行：
+先停止正在运行的控制器和键盘模拟器。每次修改代码、主配置、
+`impedancepara.yaml`、模型、launch 文件、`CMakeLists.txt` 或 `package.xml` 后，
+在 NUC 上执行：
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -95,6 +109,13 @@ ros2 launch locomotion_controller locomotion_controller.launch.py \
 `network_interface`、`robot_ip` 和 `confirm_real_robot`。控制器初始化时会主动
 释放当前 MotionSwitcher 高层模式，并严格确认进入低层调试模式，不要求启动前的
 Loco FSM ID 为 `0`。
+
+面向不同接入方的说明：
+
+- [应用层 / 翻译层接入](docs/APPLICATION_LAYER_INTERFACE.md)
+- [双臂层接入](docs/ARM_LAYER_INTERFACE.md)
+- [整体启动脚本接入](docs/SYSTEM_STARTUP_INTEGRATION.md)
+- [状态机极简使用方法](docs/QUICK_START.md)
 
 ### NUC 运行前检查
 
@@ -134,18 +155,53 @@ PYTHONNOUSERSITE=1 \
 | 方向 | topic | 类型 | 合同 |
 | --- | --- | --- | --- |
 | 输入 | `/hecbot/locomotion/high_level_mode` | `std_msgs/msg/UInt8` | `1`、`2` 或 `3` |
-| 输入 | `/hecbot/locomotion/low_level_mode` | `std_msgs/msg/UInt8` | `1` 或 `2`，仅 high mode 1 使用 |
-| 输入 | `/hecbot/locomotion/navigation_command` | `std_msgs/msg/Float32MultiArray` | 必须恰好 3 个有限数值 |
-| 输入 | `/hecbot/upper_body_cmd` | `std_msgs/msg/String` | 严格 JSON，格式见下文 |
+| 输入 | `/hecbot/locomotion/low_level_mode` | `std_msgs/msg/UInt8` | high mode 1 支持 `1/2`；high mode 3 只使用 `1` |
+| 输入 | `/hecbot/locomotion/navigation_command` | `std_msgs/msg/Float32MultiArray` | 恰好 3 个有限数值；high 1/low 1 和 high 3/low 1 表示速度 |
+| 输入 | `/hecbot/upper_body_cmd` | `std_msgs/msg/String` | 严格 JSON；只在推理后覆盖 mode 2/3 的双臂输出 |
 
-初始化输出：
+程序输出：
 
 | 方向 | topic | 类型 | 合同 |
 | --- | --- | --- | --- |
 | 输出 | `/hecbot/locomotion/initialized` | `std_msgs/msg/Bool` | 完成四模型预热、实机接管、首帧发送和 2 秒零速站立后发布 `true` |
+| 输出 | `/hecbot/whole_body_state` | `std_msgs/msg/String` | 初始化后以 50 Hz 发布实测 29DoF 关节角；`data` 是恰好 29 个有限数值的紧凑 JSON 数组，单位 rad |
 
 初始化 topic 使用 reliable + transient-local QoS，初始化完成后启动的订阅者也能收到
 最近一次 `true`。
+
+`/hecbot/whole_body_state` 发布的是 `rt/lowstate` 反馈角，不是策略目标角。
+`String.data` 示例：
+
+```json
+[0.01,-0.02,0.0,0.31,-0.18,0.01,0.02,-0.01,0.0,0.30,-0.19,-0.01,0.0,0.0,0.0,0.2,-0.2,0.0,0.9,0.0,0.0,0.0,-0.2,0.2,0.0,0.9,0.0,0.0,0.0]
+```
+
+数组下标固定如下，配置加载器会强制校验该顺序：
+
+| 下标 | 关节名称 | 下标 | 关节名称 |
+| ---: | --- | ---: | --- |
+| 0 | `left_hip_pitch_joint` | 15 | `left_shoulder_pitch_joint` |
+| 1 | `left_hip_roll_joint` | 16 | `left_shoulder_roll_joint` |
+| 2 | `left_hip_yaw_joint` | 17 | `left_shoulder_yaw_joint` |
+| 3 | `left_knee_joint` | 18 | `left_elbow_joint` |
+| 4 | `left_ankle_pitch_joint` | 19 | `left_wrist_roll_joint` |
+| 5 | `left_ankle_roll_joint` | 20 | `left_wrist_pitch_joint` |
+| 6 | `right_hip_pitch_joint` | 21 | `left_wrist_yaw_joint` |
+| 7 | `right_hip_roll_joint` | 22 | `right_shoulder_pitch_joint` |
+| 8 | `right_hip_yaw_joint` | 23 | `right_shoulder_roll_joint` |
+| 9 | `right_knee_joint` | 24 | `right_shoulder_yaw_joint` |
+| 10 | `right_ankle_pitch_joint` | 25 | `right_elbow_joint` |
+| 11 | `right_ankle_roll_joint` | 26 | `right_wrist_roll_joint` |
+| 12 | `waist_yaw_joint` | 27 | `right_wrist_pitch_joint` |
+| 13 | `waist_roll_joint` | 28 | `right_wrist_yaw_joint` |
+| 14 | `waist_pitch_joint` |  |  |
+
+检查频率和内容：
+
+```bash
+ros2 topic hz /hecbot/whole_body_state
+ros2 topic echo --once /hecbot/whole_body_state std_msgs/msg/String
+```
 
 ### 导航示例
 
@@ -180,6 +236,22 @@ ros2 topic pub --rate 20 /hecbot/locomotion/navigation_command \
 控制器内部计算或累计误差。完整合同、变换公式和数据示例见
 [`docs/NAVIGATION_ADAPTER.md`](docs/NAVIGATION_ADAPTER.md)。
 
+high mode 3 使用同一个 low mode 1 速度接口：
+
+```bash
+ros2 topic pub --once /hecbot/locomotion/low_level_mode \
+  std_msgs/msg/UInt8 "{data: 1}"
+
+ros2 topic pub --once /hecbot/locomotion/high_level_mode \
+  std_msgs/msg/UInt8 "{data: 3}"
+
+ros2 topic pub --rate 20 /hecbot/locomotion/navigation_command \
+  std_msgs/msg/Float32MultiArray "{data: [0.2, 0.0, 0.0]}"
+```
+
+该速度三元组是 `walk_with_object.onnx` 的模型输入。双臂层同时持续发送
+`/hecbot/upper_body_cmd`，但双臂消息只覆盖推理后的 14DoF 双臂输出。
+
 ### 持续查看订阅值
 
 已加载 ROS 2 和本项目环境后，用下面一个命令打开 Topic Monitor 窗口：
@@ -188,19 +260,26 @@ ros2 topic pub --rate 20 /hecbot/locomotion/navigation_command \
 ros2 run rqt_topic rqt_topic
 ```
 
-在窗口中展开并勾选以下四项的 value 列，即可持续刷新控制器当前订阅的输入：
+在窗口中展开并勾选以下各项的 value 列，即可持续刷新控制器的输入和关节角输出：
 `/hecbot/locomotion/high_level_mode`、
 `/hecbot/locomotion/low_level_mode`、
-`/hecbot/locomotion/navigation_command` 和 `/hecbot/upper_body_cmd`。
+`/hecbot/locomotion/navigation_command`、`/hecbot/upper_body_cmd` 和
+`/hecbot/whole_body_state`。
 若命令不存在，安装 ROS Jazzy 的 `ros-jazzy-rqt-topic` 包。
 
 ## 键盘整机测试
 
-测试节点会等待 `/hecbot/locomotion/initialized=true`，然后以 20 Hz 持续发布导航
-和双臂输入，频率高于两类输入的超时要求。预设位于
+测试节点会等待 `/hecbot/locomotion/initialized=true`。它默认不发布导航和双臂
+参数，相当于启动前已经按过 `k`，只用键盘发送 high/low mode；按 `k` 开启后才以
+20 Hz 持续发布导航和双臂输入，频率高于两类输入的超时要求。预设位于
 [`config/simulator_presets.json`](config/simulator_presets.json)，包含四个双臂
 姿态、三条速度轨迹和三个位置目标。按下双臂姿态键后，测试节点从下一次发布开始
 直接发送该目标，不生成中间姿态，也不做加速度限幅。
+
+`z/x/c` 分别对应
+[`models/walk_with_object_arm_pose_set.json`](models/walk_with_object_arm_pose_set.json)
+中的 `pos1_back`、`pos2_down`、`pos3_front`，是 high mode 3 持物行走的推荐
+预设。`b` 是额外的对称持物联调姿态，不属于该模型姿态文件。
 
 确保机器人周围无人、急停可用且没有其他 `rt/lowcmd` 发布者。终端 1：
 
@@ -227,38 +306,41 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | 按键 | 动作 |
 | --- | --- |
 | `1` / `2` / `3` | high-level mode 1 / 2 / 3 |
-| `v` | low mode 1，速度模式，同时清零当前导航输入 |
-| `p` | low mode 2，位置模式，同时清零当前导航输入 |
-| `0` | 取消轨迹并持续发布 `[0,0,0]` |
-| `k` | 停止/恢复导航与双臂参数发布；high/low mode 按键始终有效 |
+| `v` | low mode 1，high mode 1/3 的速度模式，同时清零当前导航输入 |
+| `p` | low mode 2，仅 high mode 1 的位置模式，同时清零当前导航输入 |
+| `0` | 取消轨迹；参数发布开启时持续发送 `[0,0,0]` |
+| `k` | 开始/停止导航与双臂参数发布；启动时默认停止，high/low mode 按键始终有效 |
 | `4` | 前进 3 秒后停止 |
 | `5` | 左右横移后停止 |
 | `6` | 左右原地转向后停止 |
 | `7` | 位置目标：前方 0.3 m |
 | `8` | 位置目标：左侧 0.2 m |
 | `9` | 位置目标：左转约 20° |
-| `z` / `x` / `c` / `b` | 双臂靠后 / 下垂 / 靠前 / 持物 |
+| `z` / `x` / `c` | 双臂靠后 / 下垂 / 靠前；对应持物行走模型的三个推荐预设 |
+| `b` | 额外的对称持物联调姿态；不是持物行走模型预设 |
 | `h` | 重新显示帮助 |
 | `q` | 退出测试节点 |
 
-需要让另一个节点独占发布真实导航指令时，先按一次 `k`。模拟器会立即停止发布
-`/hecbot/locomotion/navigation_command` 和 `/hecbot/upper_body_cmd`，并取消其内部
-正在执行的速度轨迹，但 `1/2/3`、`v/p` 仍可用于切换 high/low mode。停止时不会
-额外发布零值；状态机中最后一条模拟参数分别在 `navigation_timeout_s` 和
-`arm_timeout_s` 到期后失效。再次按 `k` 会恢复模拟参数的 20 Hz 发布。
+让真实导航或双臂节点独占发布参数时保持默认状态，不要按 `k`；`1/2/3`、`v/p`
+仍可切换 high/low mode。完全使用模拟输入测试时按一次 `k` 开启参数发布。再次按
+`k` 会立即停止 `/hecbot/locomotion/navigation_command` 和
+`/hecbot/upper_body_cmd`，并取消内部速度轨迹。停止时不额外发布零值；最后一条
+模拟参数分别在 `navigation_timeout_s` 和 `arm_timeout_s` 到期后失效。
 
 ### 终端调试日志
 
 控制进程在每次 50 Hz ONNX 推理后，向控制器终端输出一行 `[INFERENCE]` JSON：
 
 ```text
-[INFERENCE] {"event":"policy_inference","frame":125,"model":"free_walk","high_mode":1,"low_mode":1,"standing_transition":false,"navigation_input":{"semantics":"velocity","selected":[0.25,0.0,0.0],"model_input":[0.25,0.0,0.0]},"arm_input":null,"model_output":[...29 values...]}
+[INFERENCE] {"event":"policy_inference","frame":125,"model":"free_walk","high_mode":1,"low_mode":1,"standing_transition":false,"navigation_input":{"semantics":"velocity","selected":[0.25,0.0,0.0],"model_input":[0.25,0.0,0.0]},"arm_output_override":null,"model_output":[...29 values...]}
 ```
 
 - `selected`：状态机选择的速度或骨盆坐标系位置误差。
 - `model_input`：实际写入 observation 的三元组；速度模式只做最大速度幅值保护，
   不做插值或加速度限幅，位置模式不做变换。
-- `arm_input`：当前有效的双臂位置、速度、权重和序号；无有效双臂消息时为 `null`。
+- `arm_output_override`：推理后用于覆盖双臂输出的位置、速度、权重和序号；它不是
+  当前帧独立模型输入，但覆盖后 action 会进入下一帧 `previous_action`。无有效
+  双臂消息时为 `null`。
 - `model_output`：ONNX 本帧返回的原始 29 维 action，记录发生在双臂覆盖和模型切换插值之前。
 
 每次启动控制器时，运行子进程的 stdout/stderr 还会完整保存到：
@@ -303,16 +385,19 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 ```
 
 重复发送相同 mode 不重复输出切换日志。按 `4` 本身只启动速度轨迹，不会自动选择
-模式；完整操作顺序为 `v → 1 → 4`。
+模式；完全模拟时的完整操作顺序为 `k → v → 1 → 4`。
 
 推荐测试顺序：
 
-1. 按 `v`、`1`、`4`：验证 mode 1 low mode 1 和速度模型。
-2. 按 `p`：观察 low mode `1 → 2` 的 `stand_duration_s` 零速站立；随后按
+1. 确认真实导航和双臂节点均未运行，按 `k` 开启模拟参数发布。
+2. 按 `v`、`1`、`4`：验证 mode 1 low mode 1 和速度模型。
+3. 按 `p`：观察 low mode `1 → 2` 的 `stand_duration_s` 零速站立；随后按
    `7`、`8` 或 `9` 验证位置模型。
-3. 按 `2`，再按 `z`、`x`、`c`、`b`：验证站立双臂模型和姿态直接切换。
-4. 按 `3`，再选择双臂姿态：验证行走双臂模型。
-5. 任意阶段按 `0` 验证零速回退，最后按 `q` 退出输入节点。
+4. 按 `2`，再按 `z`、`x`、`c`、`b`：验证站立双臂模型和姿态直接切换。
+5. 按 `v` 切回 low mode 1，再按 `3`，优先用 `z/x/c` 选择模型预设姿态并按
+   `4/5/6`：同时验证 `arm_walk` 的导航速度模型输入和双臂输出覆盖；`b` 仅用于
+   额外接口联调。
+6. 任意阶段按 `0` 验证零速回退，最后按 `q` 退出输入节点。
 
 编辑预设 JSON 时字段不可缺失或增加；数组长度、有限数值、名称唯一性和持续时间
 都会在测试节点启动前严格校验。使用其他预设文件：
@@ -345,19 +430,24 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 
 ## 严格行为
 
-- 配置文件的每个字段都是必填项；未知字段、缺失字段、非法模式和非有限数值直接拒绝。
+- 主配置和阻抗参数文件的每个字段都是必填项；未知字段、缺失字段、非法模式和
+  非有限数值直接拒绝。
 - 初始化后但尚未收到 high-level mode 时，不猜测业务模式；控制器仅用
   `free_walk` 零速度保持站立。
 - high mode 1 尚未收到 low-level mode 时，不选择默认 submode；保持
   `free_walk` 零速度。
-- high mode 或 low mode 无法匹配时，立即落入 `free_walk + [0,0,0]`，不会继续
-  执行上一业务模式。
+- high mode 3 只有 low mode 1 才读取导航速度；low mode 2、未收到 low mode 或
+  导航超时时，`arm_walk` 的 command observation 为 `[0,0,0]`。
+- 非法 high/low mode 数值会被拒绝并立即落入 `free_walk + [0,0,0]`。合法的
+  high 3 + low 2 不属于非法模式，行为是 `arm_walk + [0,0,0]`。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3
   会作废进入该 mode 之前缓存的双臂参数；收到切换后的第一条有效双臂参数前，
   每一帧都保持模式切换前最后一帧的双臂目标。
 - 导航或双臂消息超时后不复用陈旧输入。导航变为零，双臂保持上一控制帧的实际目标。
 - 双臂位置/速度和导航速度都不做时间插值或加速度限幅。模型切换动作融合只作用于
-  腿和腰；模型 `previous_action` 在切换时清零。
+  腿和腰；模型 `previous_action` 在切换时清零。mode 2/3 的外部双臂命令不写入
+  当前帧 command observation，只在推理后覆盖输出；覆盖后实际执行的 action 会
+  写入下一帧 `previous_action`。
 - 控制线程异常或程序退出时发送 `Kp=0, Kd=8` 阻尼命令。
 
 完整运行时结构、时序和配置说明见
@@ -371,4 +461,5 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-这些测试同时覆盖模拟器预设格式、速度轨迹边界和 mode 2/3 的双臂输入时序。
+这些测试同时覆盖模拟器预设格式、速度轨迹边界、mode 3 导航速度路由和 mode 2/3
+的双臂输出覆盖时序。
