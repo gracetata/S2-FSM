@@ -116,6 +116,8 @@ Loco FSM ID 为 `0`。
 - [双臂层接入](docs/ARM_LAYER_INTERFACE.md)
 - [整体启动脚本接入](docs/SYSTEM_STARTUP_INTEGRATION.md)
 - [状态机极简使用方法](docs/QUICK_START.md)
+- [极简 Kp/Kd YAML 替换](docs/IMPEDANCE_YAML_REPLACEMENT.md)
+- [29DoF 两套顺序与模型转换](docs/JOINT_ORDER_AND_MAPPING.md)
 
 ### NUC 运行前检查
 
