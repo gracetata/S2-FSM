@@ -7,13 +7,14 @@ MODEL_DIRECTORY = Path(__file__).resolve().parents[1] / "models"
 EXPECTED_MODEL_NAMES = {
     "accurate_arrival.onnx",
     "free_walk.onnx",
+    "extreme_stand_recovery.onnx",
     "standing_grasp.onnx",
     "walk_with_object.onnx",
 }
 
 
 class ModelInferenceTest(unittest.TestCase):
-    def test_all_four_models_accept_one_observation(self):
+    def test_all_five_models_accept_one_observation(self):
         if find_spec("numpy") is None or find_spec("onnxruntime") is None:
             self.skipTest("NumPy and ONNX Runtime are required")
         import numpy as np

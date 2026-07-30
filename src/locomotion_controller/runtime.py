@@ -105,7 +105,7 @@ class ControlRuntime:
             return self._response(False, "50 Hz control thread is not running")
         return self._response(
             True,
-            "four models ready; initialization zero-velocity stand complete",
+            "five models ready; initialization zero-velocity stand complete",
         )
 
     def _require_healthy(self) -> None:

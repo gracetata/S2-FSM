@@ -17,6 +17,7 @@ MODEL_NAMES = (
     "accurate_arrival",
     "arm_stand",
     "arm_walk",
+    "stand_recovery",
 )
 POLICY_JOINT_COUNT = 29
 COMMAND_SIZE = 3

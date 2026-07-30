@@ -10,7 +10,7 @@ ROS 2 进程
                  │ 本机 Unix socket
                  ▼
 ONNX/Unitree 运行进程
-  纯状态机 + 4 个预热 Session + 唯一 50 Hz 控制线程
+  纯状态机 + 5 个预热 Session + 唯一 50 Hz 控制线程
                  │ Unitree DDS
                  ▼
         rt/lowstate / rt/lowcmd
@@ -27,7 +27,7 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 
 1. 严格读取 YAML。缺少字段、出现未知字段或模型文件不存在时立即失败。
 2. 启动配置指定的 Conda Python 子进程。
-3. 创建四个 ONNX Runtime Session，并分别执行一次 96 维零 observation 推理。
+3. 创建五个 ONNX Runtime Session，并分别执行一次 96 维零 observation 推理。
 4. 初始化 Unitree DDS，等待第一帧有效 `rt/lowstate`。
 5. 确认 `confirm_real_robot: true`，读取当前 MotionSwitcher 模式。初始化不检查
    Loco FSM ID，也不要求机器人预先处于 FSM 0。
@@ -73,10 +73,12 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | high 2 | `arm_stand` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 | high 3 + low 1 | `arm_walk` | 最新导航 `[vx,vy,yaw_rate]` | 推理后外部 14DoF 覆盖 |
 | high 3 + 其他/未收到 low | `arm_walk` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
+| high 4 | `stand_recovery` | `[0,0,0]` velocity | 模型完整 29DoF 输出 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
 模型 observation 的 command 三元组是严格零值。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
+high mode 4 与 mode 3 一样直接切入，不执行这段站立等待。
 
 high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最新速度命令
 路由到 `arm_walk`。high mode 3 收到 low mode 2 时仍保持 `arm_walk`，但 command
@@ -88,6 +90,8 @@ high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最�
 high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 的
 非 low-1 分支保持 `arm_walk + [0,0,0]`。非法 high/low mode 数值会返回拒绝结果，
 同时先把状态机置于 `free_walk + [0,0,0]` 安全回退，而不是保留上一模式。
+high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
+`stand_recovery + [0,0,0]`。
 
 ### 3.3 参数不同步时的确定值
 
@@ -140,7 +144,8 @@ high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 �
 
 mode 2 使用 `impedancepara.yaml` 中的 `*_standing_grasp` 默认角和 Kp/Kd。
 mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
-`kps_standing_grasp/kds_standing_grasp`。初始化、过渡和 mode 1 使用通用 Kp/Kd。
+`kps_standing_grasp/kds_standing_grasp`。初始化、过渡、mode 1 和 mode 4 使用
+通用默认角与通用 Kp/Kd。
 
 ## 5. ROS 接口
 
@@ -148,7 +153,7 @@ mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
 
 - Topic：`topics.high_level_mode`
 - 类型：`std_msgs/msg/UInt8`
-- 合法值：`1`、`2`、`3`
+- 合法值：`1`、`2`、`3`、`4`
 - 发布者：应用层
 
 只有值变化才触发切换。重复值用于上游重发时不会重置站立计时。

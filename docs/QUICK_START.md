@@ -16,7 +16,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 等待终端出现：
 
 ```text
-four ONNX models are ready; initialization stand is complete
+five ONNX models are ready; initialization stand is complete
 ```
 
 也可以在另一个已加载 ROS 环境的终端确认：
@@ -54,9 +54,13 @@ ros2 run locomotion_controller locomotion_controller_simulator
   双臂操作层发布
   `/hecbot/upper_body_cmd`。导航速度进入 `arm_walk` 模型；双臂命令只覆盖模型
   输出，不是当前帧独立输入；覆盖后 action 会进入下一帧 `previous_action`。
+- 按 `4`：直接进入鲁棒站立恢复模型。固定使用 `[0,0,0]` command，不需要 low
+  mode、导航或双臂输入，也不需要按 `k`。
 
-切入 mode 1/2 后先短暂零速站立属于正常行为。缺少对应业务输入或输入超时，状态机
-不会猜测参数：导航回零，双臂保持上一实际目标。
+初始化后如果不按任何 high mode，状态机持续运行
+`free_walk.onnx + [0,0,0]`，不会自动进入 mode 4 或 NAV 2。切入 mode 1/2 后先
+短暂零速站立属于正常行为。缺少对应业务输入或输入超时，状态机不会猜测参数：
+导航回零，双臂保持上一实际目标。
 
 ## 4. 完全使用键盘模拟输入（可选）
 
@@ -64,10 +68,11 @@ ros2 run locomotion_controller locomotion_controller_simulator
 顺序：
 
 ```text
-速度导航：k → v → 1 → 4/5/6
+速度导航：k → v → 1 → w/5/6
 位置导航：p → 1 → 7/8/9
 站立双臂：2 → z/x/c/b
-双臂行走：v → 3 → z/x/c，并用 4/5/6 发送速度
+双臂行走：v → 3 → z/x/c，并用 w/5/6 发送速度
+鲁棒站立恢复：4
 停止导航：0
 ```
 

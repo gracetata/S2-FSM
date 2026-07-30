@@ -18,6 +18,9 @@ observation；双臂消息不作为当前帧独立模型输入，只在推理后
 控制器不读取全局目标，不做坐标变换，不累计位移，也不保存第一次误差作为固定目标。
 导航必须根据最新定位结果持续重算并发布误差。
 
+high mode 4 不属于导航模式。状态机会忽略 low mode 和导航三元组，并固定向
+`extreme_stand_recovery.onnx` 输入 `[0,0,0]` command。
+
 ## Topic
 
 | Topic | 类型 | 内容 |

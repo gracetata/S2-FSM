@@ -1,7 +1,7 @@
 # 极简：替换 Kp/Kd YAML
 
-`impedancepara_default.yaml` 是全默认诊断文件：mode 1、mode 2、mode 3 使用相同的
-29DoF 默认角、Kp 和 Kd。数组顺序是 `policy_joint_names`，不要按
+`impedancepara_default.yaml` 是全默认诊断文件：mode 1、mode 2、mode 3、mode 4
+使用相同的 29DoF 默认角、Kp 和 Kd。数组顺序是 `policy_joint_names`，不要按
 `whole_body_state` 顺序重排。
 
 两套 29DoF 顺序、右踝在两套顺序中的下标，以及 LowState→模型→LowCmd 的完整

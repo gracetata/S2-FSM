@@ -1,4 +1,4 @@
-"""Pure three-mode state machine used by the 50 Hz runtime."""
+"""Pure four-mode state machine used by the 50 Hz runtime."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ from .protocol import ArmCommand
 HIGH_MODE_NAVIGATION = 1
 HIGH_MODE_ARM_STAND = 2
 HIGH_MODE_ARM_WALK = 3
+HIGH_MODE_STAND_RECOVERY = 4
 HIGH_MODES = {
     HIGH_MODE_NAVIGATION,
     HIGH_MODE_ARM_STAND,
     HIGH_MODE_ARM_WALK,
+    HIGH_MODE_STAND_RECOVERY,
 }
 
 LOW_MODE_VELOCITY = 1
@@ -26,6 +28,7 @@ MODEL_FREE_WALK = "free_walk"
 MODEL_ACCURATE_ARRIVAL = "accurate_arrival"
 MODEL_ARM_STAND = "arm_stand"
 MODEL_ARM_WALK = "arm_walk"
+MODEL_STAND_RECOVERY = "stand_recovery"
 
 SEMANTICS_VELOCITY = "velocity"
 SEMANTICS_TARGET_POSE = "target_pose"
@@ -94,7 +97,10 @@ class LocomotionStateMachine:
                 self._reset_arm_input()
             self._stand_until = (
                 current_time + self._stand_duration_s
-                if high_mode != HIGH_MODE_ARM_WALK
+                if high_mode in {
+                    HIGH_MODE_NAVIGATION,
+                    HIGH_MODE_ARM_STAND,
+                }
                 else 0.0
             )
             return True
@@ -246,6 +252,17 @@ class LocomotionStateMachine:
                 fresh_arm,
                 high_mode,
                 low_mode,
+                False,
+            )
+
+        if high_mode == HIGH_MODE_STAND_RECOVERY:
+            return ControlSelection(
+                MODEL_STAND_RECOVERY,
+                SEMANTICS_VELOCITY,
+                ZERO_COMMAND,
+                None,
+                high_mode,
+                None,
                 False,
             )
 

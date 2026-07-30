@@ -69,7 +69,7 @@ wait "${fsm_pid}"
 
 启动后程序依次：
 
-1. 加载并预热四个 ONNX 模型；
+1. 加载并预热五个 ONNX 模型；
 2. 连接 Unitree DDS，等待 `rt/lowstate`；
 3. 主动释放当前 Unitree MotionSwitcher 高层模式，进入低层调试模式；
 4. 用配置的 `startup_move_s` 从当前关节位置平滑移动到默认姿态；
@@ -79,7 +79,8 @@ wait "${fsm_pid}"
    `/hecbot/whole_body_state`。
 
 初始化完成后，状态机不会自行选择 high mode，也不会自行行走；它保持
-`free_walk + [0,0,0]`，等待应用层发送 high mode。
+`high_mode=None` 和 `free_walk + [0,0,0]`，等待应用层发送 high mode。它不会
+自动进入 NAV 2，也不会自动进入 high mode 4。
 
 整机需要使用 high mode 3 时，整体启动必须同时保证导航层和双臂层常驻：
 
@@ -87,6 +88,9 @@ wait "${fsm_pid}"
 - 双臂层持续发送 14DoF 命令，在推理后覆盖双臂输出；
 - 状态机自动为 mode 3 使用与 mode 2 相同的 Kp/Kd；
 - 应用层应在上述模块就绪后再发布 high mode 3。
+
+整机需要测试 high mode 4 时，应用层只需发布数值 `4`。mode 4 直接进入
+`extreme_stand_recovery.onnx + [0,0,0]`，不依赖导航层和双臂层输入。
 
 ## 5. 关闭
 

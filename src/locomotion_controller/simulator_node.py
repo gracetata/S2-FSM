@@ -29,7 +29,9 @@ from .simulator_presets import (
 
 
 PUBLISH_PERIOD_S = 0.05
-VELOCITY_KEYS = ("4", "5", "6")
+# Numeric key 4 is reserved for high mode 4. The old forward trajectory key
+# moves to w; lateral/yaw keep their existing 5/6 keys.
+VELOCITY_KEYS = ("w", "5", "6")
 POSITION_KEYS = ("7", "8", "9")
 ARM_POSE_KEYS = ("z", "x", "c", "b")
 PARAMETER_PUBLISHING_ENABLED_AT_STARTUP = False
@@ -176,7 +178,7 @@ class SimulatorNode(Node):
         if key == "k":
             self._toggle_parameter_publishing()
             return False
-        if key in {"1", "2", "3"}:
+        if key in {"1", "2", "3", "4"}:
             self._high_mode = int(key)
             if self._is_controller_initialized:
                 self._publish_mode(self._high_mode_publisher, self._high_mode)
@@ -304,6 +306,7 @@ class SimulatorNode(Node):
             "Keyboard controls:",
             "  1/2: high mode 1/2",
             "  3: high mode 3 (velocity requires low mode 1 / key v)",
+            "  4: high mode 4 (stand recovery; zero command; direct switch)",
             "  v: low mode 1 (velocity for high modes 1 and 3)",
             "  p: low mode 2 (position for high mode 1 only)",
             "  0: cancel navigation and publish [0,0,0]",

@@ -83,7 +83,7 @@ class LocomotionControllerNode(Node):
         initialized.data = True
         self._initialized_publisher.publish(initialized)
         self.get_logger().info(
-            "four ONNX models are ready; initialization stand is complete"
+            "five ONNX models are ready; initialization stand is complete"
         )
 
     def _publish_whole_body_state(self) -> None:

@@ -64,13 +64,13 @@ class SimulatorNodeTest(unittest.TestCase):
             get_logger=MagicMock(return_value=MagicMock()),
         )
 
-        should_quit = SimulatorNode._handle_key(node, "3")
+        should_quit = SimulatorNode._handle_key(node, "4")
 
         self.assertFalse(should_quit)
-        self.assertEqual(node._high_mode, 3)
+        self.assertEqual(node._high_mode, 4)
         node._publish_mode.assert_called_once_with(
             node._high_mode_publisher,
-            3,
+            4,
         )
 
 

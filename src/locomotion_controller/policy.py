@@ -57,11 +57,14 @@ class Policy:
 
 
 class PolicyBank:
-    """Load and warm all four models before any Unitree command is sent."""
+    """Load and warm every configured model before any Unitree command is sent."""
 
     def __init__(self, model_paths: dict[str, Path]) -> None:
         if set(model_paths) != set(MODEL_NAMES):
-            raise ValueError("policy bank requires exactly the four configured models")
+            raise ValueError(
+                "policy bank requires exactly "
+                f"{len(MODEL_NAMES)} configured models"
+            )
         self._policies = {
             model_name: Policy(model_paths[model_name])
             for model_name in MODEL_NAMES

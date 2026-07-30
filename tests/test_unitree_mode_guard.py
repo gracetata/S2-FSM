@@ -196,6 +196,7 @@ class UnitreeModeGuardTest(unittest.TestCase):
         from locomotion_controller.state_machine import (
             MODEL_ARM_STAND,
             MODEL_ARM_WALK,
+            MODEL_STAND_RECOVERY,
         )
 
         controller = self.module.UnitreeController.__new__(
@@ -216,11 +217,13 @@ class UnitreeModeGuardTest(unittest.TestCase):
 
         arm_stand = SimpleNamespace(model_name=MODEL_ARM_STAND)
         arm_walk = SimpleNamespace(model_name=MODEL_ARM_WALK)
+        stand_recovery = SimpleNamespace(model_name=MODEL_STAND_RECOVERY)
         self.assertEqual(controller._parameters_for(arm_stand), standing)
         self.assertEqual(
             controller._parameters_for(arm_walk),
             ("common_angles", "standing_kp", "standing_kd"),
         )
+        self.assertEqual(controller._parameters_for(stand_recovery), common)
 
     def test_previous_action_uses_post_override_executed_action(self):
         import numpy as np

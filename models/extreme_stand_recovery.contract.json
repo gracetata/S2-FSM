@@ -1,0 +1,21 @@
+{
+  "schema": "hecbot.policy_contract.v1",
+  "model": "extreme_stand_recovery.onnx",
+  "sha256": "81bc3c1a1744e5549a8209f3e46a8b46863ff2fe68a38f3f50719a7f0f25784e",
+  "input": {
+    "name": "obs",
+    "type": "tensor(float)",
+    "shape": [1, 96]
+  },
+  "output": {
+    "name": "actions",
+    "type": "tensor(float)",
+    "shape": [1, 29]
+  },
+  "control_frequency_hz": 50,
+  "action_scale": 0.25,
+  "command": [0.0, 0.0, 0.0],
+  "joint_order": "controller.policy_joint_names",
+  "default_angles": "impedance common default_angles",
+  "pd_gains": "impedance common kps/kds"
+}
