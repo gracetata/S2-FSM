@@ -38,12 +38,12 @@ locomotion_controller:
     confirm_real_robot: true
 
   state_machine:
-    # After the first LowCmd frame, remain in free_walk [0, 0, 0] for exactly
-    # this configured period before the ROS node publishes initialized=true.
+    # After the first LowCmd frame, run stand_recovery with [0, 0, 0] for
+    # exactly this period before the ROS node publishes initialized=true.
     initialization_stand_duration_s: 2.0
 
-    # Every application request for mode 1 or 2 first runs free_walk with an
-    # exact zero velocity for this duration. The same duration is used when
+    # Every application request for mode 1 or 2 first runs stand_recovery with
+    # [0, 0, 0] for this duration. The same recovery transition is used when
     # mode 1 changes from low-level mode 1 to low-level mode 2.
     stand_duration_s: 1.0
 

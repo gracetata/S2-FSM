@@ -1,7 +1,8 @@
 # High Mode 4：鲁棒站立恢复测试
 
-High Mode 4 只用于独立测试 `extreme_stand_recovery.onnx` 的真机恢复效果，不替换
-mode 1/2/3 中的任何现有策略。
+High Mode 4 用于显式进入 `extreme_stand_recovery.onnx`。同一个模型现在也替代
+所有原先用 `free_walk + [0,0,0]` 实现的内部站立功能，但不会替换非零速度行走、
+`accurate_arrival`、`standing_grasp` 或 `walk_with_object`。
 
 只需要最短操作步骤时，直接阅读
 [`MODE4_QUICK_TEST.md`](MODE4_QUICK_TEST.md)。
@@ -15,13 +16,27 @@ mode 1/2/3 中的任何现有策略。
 
 ```text
 high_mode = None
-model = free_walk.onnx
+model = extreme_stand_recovery.onnx
 command = [0,0,0]
 arm override = none
 ```
 
-50 Hz LowCmd 和推理线程仍持续运行。状态机不会自动进入 NAV 2、不会自动进入
-High Mode 4，也不会自行行走；它只是用原 `free_walk` 零速度策略安全等待。
+50 Hz LowCmd 和推理线程仍持续运行。恢复模型已经生效，但业务状态仍是
+`high_mode=None`，不是自动发送了 high mode 4，也不会自动进入 NAV 2 或自行行走。
+
+## 内部站立使用位置
+
+以下情况统一选择 `stand_recovery + [0,0,0]`：
+
+- 初始化首帧后的健康站立；
+- 初始化完成后尚未收到 high mode；
+- mode 1 或 mode 2 切入后的 `stand_duration_s`；
+- high 1/low 1 的速度为零、尚未收到或已经超时；
+- high 1 从 low 1 切换到 low 2 的等待期；
+- high mode 或 low mode 非法后的安全回退。
+
+low 1→low 2 时不会把 high mode 改成 `4`。状态仍是 high 1/low 2，并标记
+`standing_transition=true`；等待结束后才选择 `accurate_arrival`。
 
 ## High Mode 4 行为
 
@@ -70,7 +85,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 等待：
 
 ```text
-five ONNX models are ready; initialization stand is complete
+five ONNX models are ready; stand-recovery initialization is complete
 ```
 
 终端 2：

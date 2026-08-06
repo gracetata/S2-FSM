@@ -36,7 +36,7 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
    释放失败或超时会在发送策略控制前终止初始化。
 7. 从当前实机关节位置按 minimum-jerk 轨迹移动到策略默认姿态。
 8. 启动唯一的 50 Hz 线程。此时尚无业务模式，线程执行
-   `free_walk + [0,0,0]` 安全等待状态。
+   `stand_recovery + [0,0,0]` 安全等待状态。
 9. 确认第一帧 `rt/lowcmd` 已经发送，并继续保持
    `initialization_stand_duration_s`；当前配置严格为 2 秒。期间持续检查控制线程
    和 LowState，任何故障都会终止初始化。
@@ -65,31 +65,33 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 
 | 条件 | 模型 | command observation | 双臂 |
 | --- | --- | --- | --- |
-| 未收到 high mode | `free_walk` | `[0,0,0]` velocity | 模型输出 |
-| mode 1/2 的站立过渡期 | `free_walk` | `[0,0,0]` velocity | 模型输出 |
-| high 1 + low 1 | `free_walk` | 最新导航 `[vx,vy,yaw_rate]` | 模型输出 |
+| 未收到 high mode | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
+| mode 1/2 的站立过渡期 | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
+| high 1 + low 1 + 非零新鲜速度 | `free_walk` | 最新导航 `[vx,vy,yaw_rate]` | 模型输出 |
+| high 1 + low 1 + 零速/缺失/超时 | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
 | high 1 + low 2 | `accurate_arrival` | 最新导航 `[dx,dy,dyaw]` | 模型输出 |
-| high 1 + 未收到 low | `free_walk` | `[0,0,0]` velocity | 模型输出 |
+| high 1 + 未收到 low | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
 | high 2 | `arm_stand` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 | high 3 + low 1 | `arm_walk` | 最新导航 `[vx,vy,yaw_rate]` | 推理后外部 14DoF 覆盖 |
 | high 3 + 其他/未收到 low | `arm_walk` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 | high 4 | `stand_recovery` | `[0,0,0]` velocity | 模型完整 29DoF 输出 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
-模型 observation 的 command 三元组是严格零值。
+模型固定为 `stand_recovery`，command 三元组严格为零。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
 high mode 4 与 mode 3 一样直接切入，不执行这段站立等待。
 
 high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最新速度命令
 路由到 `arm_walk`。high mode 3 收到 low mode 2 时仍保持 `arm_walk`，但 command
 严格为 `[0,0,0]`。high mode 1 内从 low mode 1 切换到 low mode 2 时，状态机清除
-旧速度参数，先执行 `stand_duration_s` 的 `free_walk + [0,0,0]`，再进入
-`accurate_arrival`。从 low mode 2 切回 low mode 1 不增加等待，但同样先清除旧
-位置参数，因此新速度尚未到达时使用 `[0,0,0]`。
+旧速度参数，先执行 `stand_duration_s` 的 `stand_recovery + [0,0,0]`，再进入
+`accurate_arrival`。切换等待期间 high mode 保持 `1`、low mode 已是 `2`，不会
+伪造 high mode 4。从 low mode 2 切回 low mode 1 不增加等待，但同样先清除旧位置
+参数；新非零速度尚未到达时使用 `stand_recovery`。
 
-high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 的
+high mode 1 的未匹配 low 分支选择 `stand_recovery + [0,0,0]`；high mode 3 的
 非 low-1 分支保持 `arm_walk + [0,0,0]`。非法 high/low mode 数值会返回拒绝结果，
-同时先把状态机置于 `free_walk + [0,0,0]` 安全回退，而不是保留上一模式。
+同时先把状态机置于 `stand_recovery + [0,0,0]` 安全回退，而不是保留上一模式。
 high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 `stand_recovery + [0,0,0]`。
 
@@ -97,8 +99,9 @@ high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 
 模式和对应参数不要求在同一时刻到达，控制帧也不会使用空参数：
 
-- 进入或切换导航语义后，尚未收到对应新参数时使用 `[0,0,0]`。这同时适用于
-  high 1/low 1、high 1/low 2 和 high 3/low 1。
+- 进入或切换导航语义后，尚未收到对应新参数时三元组使用 `[0,0,0]`。high 1/low 1
+  同时切换到 `stand_recovery`；high 1/low 2 保持 `accurate_arrival`；high 3/low 1
+  保持 `arm_walk`。
 - 每次进入 mode 2/3 都作废进入该 mode 之前缓存的双臂消息。尚未收到切换后的
   新双臂参数时使用上一控制帧的实际双臂目标；控制器每帧更新该值，因此输入为空
   或不同步时不会发生关节目标跳变。
@@ -107,7 +110,8 @@ high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 
 ### 3.4 超时
 
-- 导航输入超过 `navigation_timeout_s`：三元组替换为零，不改变模式。
+- 导航输入超过 `navigation_timeout_s`：三元组替换为零，不改变 high/low mode；
+  high 1/low 1 的模型切换到 `stand_recovery`。
 - 双臂输入超过 `arm_timeout_s`：外部覆盖移除，14DoF 双臂目标保持上一控制帧的
   实际目标。
 - `rt/lowstate` 超过 `lowstate_runtime_timeout_s`：50 Hz 线程进入故障，停止推理并
@@ -210,7 +214,8 @@ joint-position observation 中。
 - QoS：reliable、transient-local、depth 1
 - 值：只有完整初始化成功后才发布 `true`
 
-“完整初始化”包含首帧 LowCmd 后的 2 秒 `free_walk + [0,0,0]` 健康站立。
+“完整初始化”包含首帧 LowCmd 后的 2 秒
+`stand_recovery + [0,0,0]` 健康站立。
 
 ### 5.6 全身关节角输出
 

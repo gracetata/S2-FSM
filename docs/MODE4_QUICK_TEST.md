@@ -26,11 +26,12 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 等待：
 
 ```text
-five ONNX models are ready; initialization stand is complete
+five ONNX models are ready; stand-recovery initialization is complete
 ```
 
 此时如果不发送 high mode，机器人保持
-`high_mode=None + free_walk + [0,0,0]`，不会自动进入 mode 4。
+`high_mode=None + stand_recovery + [0,0,0]`。恢复模型已经运行，但业务 high mode
+仍是 `None`，不是自动发送了 mode 4。
 
 ## 3. 按键进入 Mode 4
 

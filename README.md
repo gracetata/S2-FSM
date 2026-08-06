@@ -3,7 +3,7 @@
 本项目是 Unitree G1 29DoF 的四模式有限状态机。入口为
 `scripts/locomotion_controller_node`。程序启动时一次性加载并预热五个 ONNX
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
-`free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
+`stand_recovery + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
 以 50 Hz 发布实测 29DoF 关节角。
 
 实机接管前，程序会读取当前 MotionSwitcher 状态。无论当前 Loco FSM ID 是什么，
@@ -15,7 +15,8 @@
 
 | high-level mode | low-level mode | 模型 | 有效上游输入 |
 | --- | --- | --- | --- |
-| `1` 导航 | `1` 速度 | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
+| `1` 导航 | `1` 非零速度 | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
+| `1` 导航 | `1` 零速/缺失/超时 | `extreme_stand_recovery.onnx` | command 固定 `[0,0,0]` |
 | `1` 导航 | `2` 位置 | `accurate_arrival.onnx` | 导航三元组 `[dx_body, dy_body, dyaw]` |
 | `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂输出覆盖 |
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
@@ -25,18 +26,23 @@ mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 �
 的导航速度三元组，并把它写入 `arm_walk` 模型的 command observation；未收到
 low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
 
+`stand_recovery` 是统一站立策略：初始化等待、未收到 high mode、非法模式安全
+回退、mode 1/2 切入等待、high 1/low 1 的零速或超时，以及 low 1→low 2 的切换
+等待都使用该模型，不再用 `free_walk + [0,0,0]` 实现站立。
+
 双臂消息不是当前帧 ONNX 的独立输入。控制器先完成模型推理，再用外部 14DoF
 双臂位置和速度覆盖模型输出中的双臂关节。覆盖后实际执行的完整 action 会按策略
 合同写入下一帧 observation 的 `previous_action`。
 
-应用层切换到 mode 1 或 mode 2 时，控制器先选择 `free_walk`，向模型输入严格的
-零速度并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4
+应用层切换到 mode 1 或 mode 2 时，控制器先选择 `stand_recovery`，向模型输入严格
+的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4
 不执行这一步。mode 4 不读取 low mode、导航或双臂命令，直接运行恢复模型自身的
 29DoF 输出。重复发布当前 high-level mode 不会重新开始站立计时。
 
 high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
-`stand_duration_s` 零速站立。切换瞬间旧的速度三元组会被清除；如果位置参数尚未
-到达，位置模型以 `[0,0,0]` 启动，不会把旧速度解释成位置误差。
+`stand_duration_s` 的 `stand_recovery` 推理。切换瞬间旧速度被清除；等待结束后
+才进入 `accurate_arrival`。如果位置参数尚未到达，位置模型以 `[0,0,0]` 启动，
+不会把旧速度解释成位置误差。
 
 关节默认角、Kp 和 Kd 从根目录
 [`impedancepara.yaml`](impedancepara.yaml) 严格加载。mode 2 使用
@@ -169,7 +175,7 @@ PYTHONNOUSERSITE=1 \
 
 | 方向 | topic | 类型 | 合同 |
 | --- | --- | --- | --- |
-| 输出 | `/hecbot/locomotion/initialized` | `std_msgs/msg/Bool` | 完成五模型预热、实机接管、首帧发送和 2 秒零速站立后发布 `true` |
+| 输出 | `/hecbot/locomotion/initialized` | `std_msgs/msg/Bool` | 完成五模型预热、实机接管、首帧发送和 2 秒恢复策略站立后发布 `true` |
 | 输出 | `/hecbot/whole_body_state` | `std_msgs/msg/String` | 初始化后以 50 Hz 发布实测 29DoF 关节角；`data` 是恰好 29 个有限数值的紧凑 JSON 数组，单位 rad |
 
 初始化 topic 使用 reliable + transient-local QoS，初始化完成后启动的订阅者也能收到
@@ -297,7 +303,7 @@ source install/setup.bash
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
-看到 `initialization stand is complete` 后，在终端 2：
+看到 `stand-recovery initialization is complete` 后，在终端 2：
 
 ```bash
 ssh -t hecbot@192.168.50.113
@@ -397,8 +403,8 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 
 1. 确认真实导航和双臂节点均未运行，按 `k` 开启模拟参数发布。
 2. 按 `v`、`1`、`w`：验证 mode 1 low mode 1 和速度模型。
-3. 按 `p`：观察 low mode `1 → 2` 的 `stand_duration_s` 零速站立；随后按
-   `7`、`8` 或 `9` 验证位置模型。
+3. 按 `p`：观察 low mode `1 → 2` 时先运行 `stand_recovery`，等待
+   `stand_duration_s` 后再进入位置模型；随后按 `7`、`8` 或 `9` 验证位置控制。
 4. 按 `2`，再按 `z`、`x`、`c`、`b`：验证站立双臂模型和姿态直接切换。
 5. 按 `v` 切回 low mode 1，再按 `3`，优先用 `z/x/c` 选择模型预设姿态并按
    `w/5/6`：同时验证 `arm_walk` 的导航速度模型输入和双臂输出覆盖；`b` 仅用于
@@ -441,14 +447,18 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 - 主配置和阻抗参数文件的每个字段都是必填项；未知字段、缺失字段、非法模式和
   非有限数值直接拒绝。
 - 初始化后但尚未收到 high-level mode 时，`high_mode=None`；控制器仅用
-  `free_walk + [0,0,0]` 保持站立，不会自动进入 NAV 2 或 mode 4。
+  `stand_recovery + [0,0,0]` 保持站立。它使用与显式 mode 4 相同的模型，但
+  `high_mode` 仍是 `None`。
 - high mode 1 尚未收到 low-level mode 时，不选择默认 submode；保持
-  `free_walk` 零速度。
+  `stand_recovery + [0,0,0]`。
+- high 1/low 1 只有非零且未超时的速度才使用 `free_walk`；速度为零、尚未收到或
+  超时时自动使用 `stand_recovery + [0,0,0]`。
 - high mode 3 只有 low mode 1 才读取导航速度；low mode 2、未收到 low mode 或
   导航超时时，`arm_walk` 的 command observation 为 `[0,0,0]`。
 - high mode 4 不读取 low mode、导航或双臂输入，直接使用
-  `stand_recovery + [0,0,0]`；它不会自动替换任何其他模式。
-- 非法 high/low mode 数值会被拒绝并立即落入 `free_walk + [0,0,0]`。合法的
+  `stand_recovery + [0,0,0]`。同一模型也用于上述内部站立阶段，但不会把业务
+  high mode 数值改写为 `4`。
+- 非法 high/low mode 数值会被拒绝并立即落入 `stand_recovery + [0,0,0]`。合法的
   high 3 + low 2 不属于非法模式，行为是 `arm_walk + [0,0,0]`。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3
   会作废进入该 mode 之前缓存的双臂参数；收到切换后的第一条有效双臂参数前，

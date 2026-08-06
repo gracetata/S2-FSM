@@ -84,7 +84,7 @@ class LocomotionStateMachine:
                 self._stand_until = 0.0
                 raise ValueError(
                     f"high-level mode must be one of {sorted(HIGH_MODES)}; "
-                    "controller entered free-walk zero standby"
+                    "controller entered stand-recovery standby"
                 )
             if high_mode == self._high_mode:
                 return False
@@ -116,7 +116,7 @@ class LocomotionStateMachine:
                 self._stand_until = 0.0
                 raise ValueError(
                     f"low-level mode must be one of {sorted(LOW_MODES)}; "
-                    "controller entered free-walk zero standby"
+                    "controller entered stand-recovery standby"
                 )
             if low_mode == self._low_mode:
                 return False
@@ -171,16 +171,18 @@ class LocomotionStateMachine:
             arm_received_at = self._arm_received_at
             stand_until = self._stand_until
 
-        is_standing = high_mode is None or current_time < stand_until
-        if is_standing:
-            return ControlSelection(
-                model_name=MODEL_FREE_WALK,
-                command_semantics=SEMANTICS_VELOCITY,
-                command=ZERO_COMMAND,
-                arm_command=None,
+        if high_mode is None:
+            return self._stand_recovery_selection(
+                high_mode=None,
+                low_mode=low_mode,
+                is_transition=False,
+            )
+
+        if current_time < stand_until:
+            return self._stand_recovery_selection(
                 high_mode=high_mode,
                 low_mode=low_mode,
-                is_standing_transition=high_mode is not None,
+                is_transition=True,
             )
 
         is_navigation_fresh = (
@@ -207,6 +209,12 @@ class LocomotionStateMachine:
                     False,
                 )
             if low_mode == LOW_MODE_VELOCITY:
+                if fresh_navigation == ZERO_COMMAND:
+                    return self._stand_recovery_selection(
+                        high_mode=high_mode,
+                        low_mode=low_mode,
+                        is_transition=False,
+                    )
                 return ControlSelection(
                     MODEL_FREE_WALK,
                     SEMANTICS_VELOCITY,
@@ -216,14 +224,10 @@ class LocomotionStateMachine:
                     low_mode,
                     False,
                 )
-            return ControlSelection(
-                MODEL_FREE_WALK,
-                SEMANTICS_VELOCITY,
-                ZERO_COMMAND,
-                None,
-                high_mode,
-                None,
-                False,
+            return self._stand_recovery_selection(
+                high_mode=high_mode,
+                low_mode=None,
+                is_transition=False,
             )
 
         if high_mode == HIGH_MODE_ARM_STAND:
@@ -256,24 +260,32 @@ class LocomotionStateMachine:
             )
 
         if high_mode == HIGH_MODE_STAND_RECOVERY:
-            return ControlSelection(
-                MODEL_STAND_RECOVERY,
-                SEMANTICS_VELOCITY,
-                ZERO_COMMAND,
-                None,
-                high_mode,
-                None,
-                False,
+            return self._stand_recovery_selection(
+                high_mode=high_mode,
+                low_mode=None,
+                is_transition=False,
             )
 
+        return self._stand_recovery_selection(
+            high_mode=None,
+            low_mode=None,
+            is_transition=False,
+        )
+
+    @staticmethod
+    def _stand_recovery_selection(
+        high_mode: int | None,
+        low_mode: int | None,
+        is_transition: bool,
+    ) -> ControlSelection:
         return ControlSelection(
-            MODEL_FREE_WALK,
-            SEMANTICS_VELOCITY,
-            ZERO_COMMAND,
-            None,
-            None,
-            None,
-            False,
+            model_name=MODEL_STAND_RECOVERY,
+            command_semantics=SEMANTICS_VELOCITY,
+            command=ZERO_COMMAND,
+            arm_command=None,
+            high_mode=high_mode,
+            low_mode=low_mode,
+            is_standing_transition=is_transition,
         )
 
     def _reset_navigation(self) -> None:

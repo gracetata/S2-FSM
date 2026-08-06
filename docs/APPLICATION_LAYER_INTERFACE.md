@@ -40,7 +40,8 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 
 ## 3. 切换行为
 
-- mode 1 和 mode 2 切入后，状态机先执行配置时长的零速站立，再进入目标模型。
+- mode 1 和 mode 2 切入后，状态机先运行配置时长的
+  `stand_recovery + [0,0,0]`，再进入目标模型。
 - mode 3 和 mode 4 直接切入目标模型。
 - 重复发送当前 high mode 不会重新开始站立计时，可用于上游状态重发。
 - 切入 mode 1 后，在导航层的新 low mode 和导航参数到达前保持零速。
@@ -49,11 +50,15 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 - 切入 mode 2/3 后，在双臂操作层的新消息到达前保持切换前最后一帧双臂目标。
   双臂命令不作为当前帧独立模型输入，只在推理后覆盖输出；覆盖后实际 action 会
   进入下一帧 `previous_action`。
+- high 1/low 1 的速度为零、尚未收到或超时时使用恢复模型；收到非零新速度后
+  自动切回 `free_walk`。
+- high 1 从 low 1 切到 low 2 时，第一次识别切换就运行 `stand_recovery`；
+  `stand_duration_s` 结束后才进入 `accurate_arrival`。
 - mode 4 不读取 low mode、导航或双臂输入；恢复模型的完整 29DoF 输出直接控制
-  机器人，且不会替换 mode 1/2/3 的策略。
-- 初始化后未收到任何 high mode 时，状态机保持 `free_walk + [0,0,0]`，不会自动
-  进入 mode 4。
-- 非法值会被拒绝，并使状态机回到 `free_walk + [0,0,0]` 安全等待。
+  机器人。同一模型用于内部站立，但内部切换不会把 high mode 改写成 `4`。
+- 初始化后未收到任何 high mode 时，状态机保持
+  `high_mode=None + stand_recovery + [0,0,0]`。
+- 非法值会被拒绝，并使状态机回到 `stand_recovery + [0,0,0]` 安全等待。
 
 ## 4. 应用层不需要发送的内容
 

@@ -16,7 +16,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 等待终端出现：
 
 ```text
-five ONNX models are ready; initialization stand is complete
+five ONNX models are ready; stand-recovery initialization is complete
 ```
 
 也可以在另一个已加载 ROS 环境的终端确认：
@@ -58,9 +58,9 @@ ros2 run locomotion_controller locomotion_controller_simulator
   mode、导航或双臂输入，也不需要按 `k`。
 
 初始化后如果不按任何 high mode，状态机持续运行
-`free_walk.onnx + [0,0,0]`，不会自动进入 mode 4 或 NAV 2。切入 mode 1/2 后先
-短暂零速站立属于正常行为。缺少对应业务输入或输入超时，状态机不会猜测参数：
-导航回零，双臂保持上一实际目标。
+`stand_recovery + [0,0,0]`，但 `high_mode` 仍是 `None`。切入 mode 1/2 后先短暂
+运行同一恢复模型属于正常行为；尤其 low 1→low 2 会先恢复站立，等待结束后才进入
+位置模型。high 1/low 1 的速度为零或超时时也自动使用恢复模型。
 
 ## 4. 完全使用键盘模拟输入（可选）
 
