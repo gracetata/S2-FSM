@@ -22,6 +22,9 @@
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
 | `4` 鲁棒站立恢复 | 不使用 | `extreme_stand_recovery.onnx` | 无；command 固定 `[0,0,0]` |
 
+当前 velocity tracking 和 extreme stand 模型的训练来源、checkpoint 与 ONNX 哈希
+见 [`docs/MODEL_PROVENANCE.md`](docs/MODEL_PROVENANCE.md)。
+
 mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 只接受 low mode 1
 的导航速度三元组，并把它写入 `arm_walk` 模型的 command observation；未收到
 low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。

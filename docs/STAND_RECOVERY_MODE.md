@@ -61,7 +61,8 @@ default angles / Kp / Kd = 通用组
 | 项目 | 值 |
 | --- | --- |
 | 文件 | `models/extreme_stand_recovery.onnx` |
-| SHA256 | `81bc3c1a1744e5549a8209f3e46a8b46863ff2fe68a38f3f50719a7f0f25784e` |
+| SHA256 | `eb2e993220d2e4a343602dfa1556064fce440ce230580803930f7b82151eab6e` |
+| 来源 checkpoint | `model_20.pt`（2026-08-07 jerk-limited V4 正式模型） |
 | 输入 | `obs`, float32, `[1,96]` |
 | 输出 | `actions`, float32, `[1,29]` |
 | 控制频率 | 50 Hz |
@@ -70,6 +71,9 @@ default angles / Kp / Kd = 通用组
 
 模型的 observation 布局、29DoF 顺序、默认角和通用 Kp/Kd 已逐项核对，与当前
 控制器合同一致。
+
+完整来源、checkpoint 哈希和 velocity tracking 模型版本见
+[`MODEL_PROVENANCE.md`](MODEL_PROVENANCE.md)。
 
 ## 键盘真机测试
 

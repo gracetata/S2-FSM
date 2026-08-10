@@ -1,0 +1,23 @@
+{
+  "schema": "hecbot.policy_contract.v1",
+  "model": "free_walk.onnx",
+  "sha256": "5de4f2852286919395a3579e106ccdee0164cc220e9bd1d9865a64912e1a0dcd",
+  "source_thread": "019fd708-6fe7-7943-9cd2-53dae063ce9c",
+  "source_checkpoint": "future5090_model9996_two_goal_robust_v3_20260809/model_final.pt",
+  "source_checkpoint_sha256": "12428d0a2312de12f49e43eeade0c3bd73cdb09634e0ad5a2c0fa9f1f55ca9af",
+  "input": {
+    "name": "obs",
+    "type": "tensor(float)",
+    "shape": [1, 96]
+  },
+  "output": {
+    "name": "actions",
+    "type": "tensor(float)",
+    "shape": [1, 29]
+  },
+  "control_frequency_hz": 50,
+  "action_scale": 0.25,
+  "joint_order": "controller.policy_joint_names",
+  "default_angles": "impedance common default_angles",
+  "pd_gains": "impedance common kps/kds"
+}
