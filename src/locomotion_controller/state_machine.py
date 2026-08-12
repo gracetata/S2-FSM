@@ -1,4 +1,4 @@
-"""Pure four-mode state machine used by the 50 Hz runtime."""
+"""Pure five-mode state machine used by the 50 Hz runtime."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ HIGH_MODE_NAVIGATION = 1
 HIGH_MODE_ARM_STAND = 2
 HIGH_MODE_ARM_WALK = 3
 HIGH_MODE_STAND_RECOVERY = 4
+HIGH_MODE_FREE_WALK_STAND = 5
 HIGH_MODES = {
     HIGH_MODE_NAVIGATION,
     HIGH_MODE_ARM_STAND,
     HIGH_MODE_ARM_WALK,
     HIGH_MODE_STAND_RECOVERY,
+    HIGH_MODE_FREE_WALK_STAND,
 }
 
 LOW_MODE_VELOCITY = 1
@@ -90,7 +92,11 @@ class LocomotionStateMachine:
                 return False
             self._high_mode = high_mode
             self._reset_navigation()
-            if high_mode in {HIGH_MODE_ARM_STAND, HIGH_MODE_ARM_WALK}:
+            if high_mode in {
+                HIGH_MODE_ARM_STAND,
+                HIGH_MODE_ARM_WALK,
+                HIGH_MODE_FREE_WALK_STAND,
+            }:
                 # A pose received for an earlier mode must not be applied to
                 # the newly selected arm policy. The controller holds its
                 # previous frame until a post-switch command arrives.
@@ -271,6 +277,13 @@ class LocomotionStateMachine:
 
         if high_mode == HIGH_MODE_STAND_RECOVERY:
             return self._stand_recovery_selection(
+                high_mode=high_mode,
+                low_mode=None,
+                is_transition=False,
+            )
+
+        if high_mode == HIGH_MODE_FREE_WALK_STAND:
+            return self._free_walk_stand_selection(
                 high_mode=high_mode,
                 low_mode=None,
                 is_transition=False,

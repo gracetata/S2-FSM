@@ -13,6 +13,7 @@ install(
   PROGRAMS
     scripts/locomotion_controller_node
     scripts/locomotion_controller_simulator
+    scripts/totarget_navigation_bridge
   DESTINATION lib/${PROJECT_NAME}
 )
 

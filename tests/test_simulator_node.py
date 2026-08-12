@@ -88,7 +88,9 @@ class SimulatorNodeTest(unittest.TestCase):
             _is_controller_initialized=True,
             _low_mode_publisher=MagicMock(),
             _publish_mode=MagicMock(),
+            _enable_navigation_publishing=MagicMock(),
             _log_current_state=MagicMock(),
+            _print_velocity_state=MagicMock(),
             _config=SimpleNamespace(
                 controller=SimpleNamespace(
                     max_velocity_command=(0.8, 0.5, 1.57),
@@ -107,6 +109,39 @@ class SimulatorNodeTest(unittest.TestCase):
             1,
         )
         node._print_velocity_state.assert_called_once_with("W")
+        node._enable_navigation_publishing.assert_called_once_with()
+
+    def test_mode_five_disables_keyboard_navigation_before_publish(self):
+        node = SimpleNamespace(
+            _high_mode=1,
+            _is_controller_initialized=True,
+            _high_mode_publisher=MagicMock(),
+            _publish_mode=MagicMock(),
+            _disable_navigation_publishing=MagicMock(),
+            _log_current_state=MagicMock(),
+        )
+
+        SimulatorNode._handle_key(node, "5")
+
+        node._disable_navigation_publishing.assert_called_once_with()
+        node._publish_mode.assert_called_once_with(node._high_mode_publisher, 5)
+
+    def test_position_mode_key_hands_navigation_to_totarget(self):
+        node = SimpleNamespace(
+            _low_mode=1,
+            _is_controller_initialized=True,
+            _low_mode_publisher=MagicMock(),
+            _publish_mode=MagicMock(),
+            _stop_navigation=MagicMock(),
+            _disable_navigation_publishing=MagicMock(),
+            _log_current_state=MagicMock(),
+        )
+
+        SimulatorNode._handle_key(node, "p")
+
+        self.assertEqual(node._low_mode, 2)
+        node._disable_navigation_publishing.assert_called_once_with()
+        node._publish_mode.assert_called_once_with(node._low_mode_publisher, 2)
 
     def test_velocity_terminal_line_states_if_command_is_actually_sent(self):
         node = SimpleNamespace(

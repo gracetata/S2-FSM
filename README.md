@@ -1,6 +1,6 @@
 # 人形机器人运动控制器
 
-本项目是 Unitree G1 29DoF 的四模式有限状态机。入口为
+本项目是 Unitree G1 29DoF 的五模式有限状态机。入口为
 `scripts/locomotion_controller_node`。程序启动时一次性加载并预热五个 ONNX
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
 `free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
@@ -21,6 +21,7 @@
 | `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂输出覆盖 |
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
 | `4` 鲁棒站立恢复 | 不使用 | `extreme_stand_recovery.onnx` | 无；command 固定 `[0,0,0]` |
+| `5` 零速站立 | 不使用 | `free_walk.onnx` | 无；command 固定 `[0,0,0]` |
 
 当前 velocity tracking、accurate arrival、ArmHack walk 和 extreme stand 模型的来源、checkpoint 与 ONNX 哈希
 见 [`docs/MODEL_PROVENANCE.md`](docs/MODEL_PROVENANCE.md)。
@@ -32,16 +33,18 @@ low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
 除显式 high mode 4 外，所有内部站立都统一使用 `free_walk + [0,0,0]`：包括初始化
 等待、未收到 high mode、非法模式安全回退、mode 1/2 切入等待、high 1/low 1 的
 速度缺失或超时，以及 low 1→low 2 的切换等待。`extreme_stand_recovery.onnx` 只在
-收到 high mode 4 时使用。
+收到 high mode 4 时使用。high mode 5 是可显式选择的
+`free_walk + [0,0,0]` 站立模式，忽略 low mode、导航和双臂输入。
 
 双臂消息不是当前帧 ONNX 的独立输入。控制器先完成模型推理，再用外部 14DoF
 双臂位置和速度覆盖模型输出中的双臂关节。覆盖后实际执行的完整 action 会按策略
 合同写入下一帧 observation 的 `previous_action`。
 
 应用层切换到 mode 1 或 mode 2 时，控制器先选择 `free_walk`，向模型输入严格
-的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4
+的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4/5
 不执行这一步。mode 4 不读取 low mode、导航或双臂命令，直接运行恢复模型自身的
-29DoF 输出。重复发布当前 high-level mode 不会重新开始站立计时。
+29DoF 输出；mode 5 同样忽略这些输入，但运行 `free_walk + [0,0,0]`。
+重复发布当前 high-level mode 不会重新开始站立计时。
 
 high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
 `stand_duration_s` 的 `free_walk + [0,0,0]` 推理。切换瞬间旧速度被清除；等待结束后
@@ -389,9 +392,9 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 | 按键 | 动作 |
 | --- | --- |
-| `1` / `2` / `3` / `4` | high-level mode 1 / 2 / 3 / 4 |
+| `1` / `2` / `3` / `4` / `5` | high-level mode 1 / 2 / 3 / 4 / 5；`5` 为 `free_walk + [0,0,0]` 站立并关闭键盘导航发布 |
 | `v` | low mode 1，high mode 1/3 的速度模式，同时清零当前导航输入 |
-| `p` | low mode 2，仅 high mode 1 的位置模式，同时清零当前导航输入 |
+| `p` | 一键切 low mode 2，同时停止键盘导航发布，把话题所有权交给 ToTarget |
 | `0` | 取消轨迹；参数发布开启时持续发送 `[0,0,0]` |
 | `k` | 开始/停止导航与双臂参数发布；启动时默认停止，high/low mode 按键始终有效 |
 | `n` | 只开始/停止导航参数发布；使用 `W/S/A/D/Q/E` 时推荐该键 |
@@ -400,8 +403,8 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | `A` / `D` | `vy` 每次增加 / 减少 `0.05 m/s`；自动选择 low mode 1 |
 | `Q` / `E` | `yaw_rate` 每次增加 / 减少 `0.05 rad/s`；自动选择 low mode 1 |
 | `f` | 固定轨迹：前进 3 秒后停止 |
-| `5` | 左右横移后停止 |
-| `6` | 左右原地转向后停止 |
+| `g` | 左右横移后停止 |
+| `r` | 左右原地转向后停止 |
 | `7` | 位置目标：前方 0.3 m |
 | `8` | 位置目标：左侧 0.2 m |
 | `9` | 位置目标：左转约 20° |
@@ -431,7 +434,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 `delivery=NOT_PUBLISHED_PRESS_N` 表示速度只改在模拟器内部，应按 `n` 开启导航
 发布；`WAIT_INITIALIZED` 表示状态机尚未发布 initialized。
 
-让真实导航或双臂节点独占发布参数时保持对应模拟发布开关关闭；`1/2/3/4`、`v/p`
+让真实导航或双臂节点独占发布参数时保持对应模拟发布开关关闭；`1/2/3/4/5`、`v/p`
 仍可切换 high/low mode。只用键盘测试速度时按 `n`，不要开启模拟双臂发布；完全
 使用模拟输入测试时可按一次 `k` 同时开启。再次按
 `k` 会立即停止 `/hecbot/locomotion/navigation_command` 和
@@ -497,18 +500,19 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 [locomotion_controller_node-1] 模式切换为 low mode 1
 ```
 
-重复发送相同 mode 不重复输出切换日志。按 `4` 直接发送 high mode 4；固定的
+重复发送相同 mode 不重复输出切换日志。按 `4` 直接发送 high mode 4，按 `5`
+直接发送 high mode 5 并停止键盘导航发布；固定的
 “前进三秒后停止”轨迹使用 `f`。自由速度导航的完整操作顺序为
-`n → 1 → W/S、A/D、Q/E`，速度增量键会自动选择 low mode 1。
+`1 → W/S、A/D、Q/E`，速度增量键会自动选择 low mode 1 并开启导航发布。
 
 推荐测试顺序：
 
-1. 只测试导航速度时按 `n` 开启导航发布；确认真实导航和双臂节点均未运行时，也可
-   按 `k` 同时开启两类模拟参数。
-2. 按 `1`，再用 `W/S`、`A/D`、`Q/E` 自由调整三轴速度：验证 mode 1 low mode 1
-   和速度模型；增量键会自动发送 low mode 1。
-3. 按 `p`：观察 low mode `1 → 2` 时先运行 `free_walk + [0,0,0]`，等待
+1. 按 `1`，再用 `W/S`、`A/D`、`Q/E` 自由调整三轴速度：验证 mode 1 low mode 1
+   和速度模型；增量键会自动发送 low mode 1 并开启导航发布。
+2. 按 `p`：键盘先停止导航发布并把输入交给外部 ToTarget；观察 low mode
+   `1 → 2` 时先运行 `free_walk + [0,0,0]`，等待
    `stand_duration_s` 后再进入位置模型；随后按 `7`、`8` 或 `9` 验证位置控制。
+3. 按 `5`：验证显式 `free_walk + [0,0,0]` 站立。
 4. 按 `2`，再按空格循环 `z/x/c`，或直接按 `z`、`x`、`c`、`b`：验证站立
    双臂模型和姿态直接切换。
 5. 按 `3`，优先用空格循环或用 `z/x/c` 直接选择模型预设姿态，再按
@@ -563,6 +567,8 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
   导航超时时，`arm_walk` 的 command observation 为 `[0,0,0]`。
 - high mode 4 不读取 low mode、导航或双臂输入，直接使用
   `stand_recovery + [0,0,0]`；这是恢复模型唯一的使用入口。
+- high mode 5 不读取 low mode、导航或双臂输入，直接使用
+  `free_walk + [0,0,0]`，用于显式普通站立和多轮导航之间的隔离。
 - 非法 high/low mode 数值会被拒绝并立即落入 `free_walk + [0,0,0]`。合法的
   high 3 + low 2 不属于非法模式，行为是 `arm_walk + [0,0,0]`。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3

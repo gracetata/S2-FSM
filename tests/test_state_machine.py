@@ -6,6 +6,7 @@ from locomotion_controller.state_machine import (
     HIGH_MODE_ARM_WALK,
     HIGH_MODE_NAVIGATION,
     HIGH_MODE_STAND_RECOVERY,
+    HIGH_MODE_FREE_WALK_STAND,
     LOW_MODE_TARGET_POSE,
     LOW_MODE_VELOCITY,
     MODEL_ACCURATE_ARRIVAL,
@@ -148,6 +149,20 @@ class StateMachineTest(unittest.TestCase):
 
         self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
         self.assertEqual(selection.high_mode, HIGH_MODE_STAND_RECOVERY)
+        self.assertIsNone(selection.low_mode)
+        self.assertEqual(selection.command, ZERO_COMMAND)
+        self.assertIsNone(selection.arm_command)
+        self.assertFalse(selection.is_standing_transition)
+
+    def test_mode_five_switches_directly_to_zero_command_free_walk(self):
+        self.machine.set_low_mode(LOW_MODE_TARGET_POSE, now=0.5)
+        self.machine.set_navigation_command((0.5, 0.1, 0.2), now=0.5)
+        self.machine.set_high_mode(HIGH_MODE_FREE_WALK_STAND, now=1.0)
+
+        selection = self.machine.select(now=1.0)
+
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
+        self.assertEqual(selection.high_mode, HIGH_MODE_FREE_WALK_STAND)
         self.assertIsNone(selection.low_mode)
         self.assertEqual(selection.command, ZERO_COMMAND)
         self.assertIsNone(selection.arm_command)

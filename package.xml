@@ -2,7 +2,7 @@
 <package format="3">
   <name>locomotion_controller</name>
   <version>2.0.0</version>
-  <description>Four-mode Unitree G1 locomotion finite state machine.</description>
+  <description>Five-mode Unitree G1 locomotion finite state machine.</description>
   <maintainer email="robotics@hecbot.local">Hecbot Robotics</maintainer>
   <license>Proprietary</license>
 

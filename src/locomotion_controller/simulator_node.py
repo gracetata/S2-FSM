@@ -35,8 +35,8 @@ from .simulator_presets import (
 
 PUBLISH_PERIOD_S = 0.05
 # W/S, A/D and Q/E are reserved for incremental velocity control. Fixed test
-# trajectories use F/5/6.
-VELOCITY_KEYS = ("f", "5", "6")
+# trajectories use F/G/R. Numeric key 5 is reserved for high mode 5.
+VELOCITY_KEYS = ("f", "g", "r")
 POSITION_KEYS = ("7", "8", "9")
 ARM_POSE_KEYS = ("z", "x", "c", "b")
 ARM_CYCLE_HIGH_MODES = {2, 3}
@@ -213,8 +213,10 @@ class SimulatorNode(Node):
             self._toggle_arm_publishing()
             self._log_current_state("arm publishing toggled")
             return False
-        if key in {"1", "2", "3", "4"}:
+        if key in {"1", "2", "3", "4", "5"}:
             self._high_mode = int(key)
+            if self._high_mode == 5:
+                self._disable_navigation_publishing()
             if self._is_controller_initialized:
                 self._publish_mode(self._high_mode_publisher, self._high_mode)
             self._log_current_state(f"high mode -> {self._high_mode}")
@@ -222,6 +224,10 @@ class SimulatorNode(Node):
         if key in {"v", "p"}:
             self._low_mode = 1 if key == "v" else 2
             self._stop_navigation()
+            if key == "p":
+                # One-key ownership handoff: stop keyboard navigation before
+                # announcing low mode 2, leaving ToTarget as sole publisher.
+                self._disable_navigation_publishing()
             if self._is_controller_initialized:
                 self._publish_mode(self._low_mode_publisher, self._low_mode)
             self._log_current_state(f"low mode -> {self._low_mode}")
@@ -262,6 +268,7 @@ class SimulatorNode(Node):
             self._navigation_command = ZERO_COMMAND
             if self._is_controller_initialized:
                 self._publish_mode(self._low_mode_publisher, self._low_mode)
+        self._enable_navigation_publishing()
         self._navigation_command = adjust_keyboard_velocity(
             self._navigation_command,
             key,
@@ -386,6 +393,15 @@ class SimulatorNode(Node):
             and self._is_arm_publishing_enabled
         )
 
+    def _disable_navigation_publishing(self) -> None:
+        self._is_navigation_publishing_enabled = False
+        self._stop_navigation()
+        self._is_parameter_publishing_enabled = False
+
+    def _enable_navigation_publishing(self) -> None:
+        self._is_navigation_publishing_enabled = True
+        self._is_parameter_publishing_enabled = self._is_arm_publishing_enabled
+
     def _toggle_arm_publishing(self) -> None:
         self._is_arm_publishing_enabled = (
             not self._is_arm_publishing_enabled
@@ -448,8 +464,9 @@ class SimulatorNode(Node):
             "  1/2: high mode 1/2",
             "  3: high mode 3 (velocity requires low mode 1 / key v)",
             "  4: high mode 4 (stand recovery; zero command; direct switch)",
+            "  5: high mode 5 (free walk [0,0,0] stand; stop keyboard navigation)",
             "  v: low mode 1 (velocity for high modes 1 and 3)",
-            "  p: low mode 2 (position for high mode 1 only)",
+            "  p: low mode 2 and stop keyboard navigation (ToTarget handoff)",
             "  W/S: increase/decrease vx by 0.05 m/s",
             "  A/D: increase/decrease vy by 0.05 m/s",
             "  Q/E: increase/decrease yaw rate by 0.05 rad/s",

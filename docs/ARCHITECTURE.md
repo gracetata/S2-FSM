@@ -75,11 +75,12 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | high 3 + low 1 | `arm_walk` | 最新导航 `[vx,vy,yaw_rate]` | 推理后外部 14DoF 覆盖 |
 | high 3 + 其他/未收到 low | `arm_walk` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 | high 4 | `stand_recovery` | `[0,0,0]` velocity | 模型完整 29DoF 输出 |
+| high 5 | `free_walk` | `[0,0,0]` velocity | 模型输出 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
 模型固定为 `free_walk`，command 三元组严格为零。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
-high mode 4 与 mode 3 一样直接切入，不执行这段站立等待。
+high mode 4/5 与 mode 3 一样直接切入，不执行这段站立等待。
 
 high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最新速度命令
 路由到 `arm_walk`。high mode 3 收到 low mode 2 时仍保持 `arm_walk`，但 command
@@ -94,6 +95,7 @@ high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 �
 同时先把状态机置于 `free_walk + [0,0,0]` 安全回退，而不是保留上一模式。
 high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 `stand_recovery + [0,0,0]`。
+high mode 5 同样忽略这些输入，但固定选择 `free_walk + [0,0,0]`。
 
 ### 3.3 参数不同步时的确定值
 
@@ -158,7 +160,7 @@ mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
 
 - Topic：`topics.high_level_mode`
 - 类型：`std_msgs/msg/UInt8`
-- 合法值：`1`、`2`、`3`、`4`
+- 合法值：`1`、`2`、`3`、`4`、`5`
 - 发布者：应用层
 
 只有值变化才触发切换。重复值用于上游重发时不会重置站立计时。

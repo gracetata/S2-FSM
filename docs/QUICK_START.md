@@ -76,6 +76,8 @@ ros2 run locomotion_controller locomotion_controller_simulator
   输出，不是当前帧独立输入；覆盖后 action 会进入下一帧 `previous_action`。
 - 按 `4`：直接进入鲁棒站立恢复模型。固定使用 `[0,0,0]` command，不需要 low
   mode、导航或双臂输入，也不需要按 `k`。
+- 按 `5`：直接进入 `free_walk + [0,0,0]` 普通站立，同时关闭键盘导航发布；
+  用于两轮导航之间安全隔离。
 
 初始化后如果不按任何 high mode，状态机持续运行
 `free_walk + [0,0,0]`，但 `high_mode` 仍是 `None`。切入 mode 1/2 后也先短暂运行
@@ -89,21 +91,22 @@ ros2 run locomotion_controller locomotion_controller_simulator
 `/hecbot/upper_body_cmd`。按 `m` 可单独开关模拟双臂发布。常用顺序：
 
 ```text
-速度导航：n → 1 → W/S、A/D、Q/E（速度增量键自动选择 low mode 1）
+速度导航：1 → W/S、A/D、Q/E（速度键自动选择 low mode 1 并开启发布）
 位置导航：p → 1 → 7/8/9
 站立双臂：2 → Space 循环 z/x/c，或直接按 z/x/c/b
 双臂行走：3 → Space 循环 z/x/c，并用 W/S、A/D、Q/E 调整速度
 鲁棒站立恢复：4
+零速 free-walk 站立：5
 停止导航：0
 ```
 
 每次 `W/S`、`A/D` 分别增减 `0.05 m/s`，`Q/E` 分别增减
-`0.05 rad/s`；按 `0` 严格归零。固定测试轨迹仍可用 `f/5/6`。空格仅在 high
+`0.05 rad/s`；按 `0` 严格归零。固定测试轨迹仍可用 `f/g/r`。空格仅在 high
 mode 2/3 中生效，只循环三个推荐姿态，不包含额外姿态 `b`。
 
 每次速度键都会额外打印 `[KEYBOARD_VELOCITY]`，明确显示当前
 `vx/vy/yaw_rate`。`delivery=PUBLISHING_20HZ` 才表示正在发送；出现
-`NOT_PUBLISHED_PRESS_N` 时按 `n`。
+`NOT_PUBLISHED_PRESS_N` 时按任意速度增量键即可重新开启键盘导航。
 
 每次按键改变模式、速度或双臂姿态后，终端都会打印 `[KEYBOARD_STATE]`，其中包含
 当前 High Mode、Low Mode、`[vx,vy,yaw_rate]`、双臂姿态和参数发布开关。看到

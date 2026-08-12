@@ -67,6 +67,15 @@ class PolicyInputContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "observation must be finite"):
             validate_policy_input_packet(packet)
 
+    def test_mode_five_free_walk_packet_is_valid(self):
+        packet = packet_for("free_walk")
+        packet["high_mode"] = 5
+        packet["low_mode"] = None
+        packet["navigation_input"]["selected"] = [0.0, 0.0, 0.0]
+        packet["navigation_input"]["model_input"] = [0.0, 0.0, 0.0]
+
+        self.assertIs(validate_policy_input_packet(packet), packet)
+
     def test_runtime_client_validates_combined_telemetry(self):
         client = RuntimeClient.__new__(RuntimeClient)
         packet = packet_for("arm_walk", frame=12)

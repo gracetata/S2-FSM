@@ -24,7 +24,7 @@
 
 | topic | 类型 | 合法值 |
 | --- | --- | --- |
-| `/hecbot/locomotion/high_level_mode` | `std_msgs/msg/UInt8` | `1`、`2`、`3`、`4` |
+| `/hecbot/locomotion/high_level_mode` | `std_msgs/msg/UInt8` | `1`、`2`、`3`、`4`、`5` |
 
 值的含义：
 
@@ -34,6 +34,7 @@
 | `2` | 原地站立双臂操作 | 双臂操作层发送 14DoF 双臂命令 |
 | `3` | 持物/双臂行走 | 导航层发送 low 1 速度；双臂层发送 14DoF 输出覆盖命令 |
 | `4` | 鲁棒站立恢复独立测试 | 不需要其他模块；command 固定 `[0,0,0]` |
+| `5` | `free_walk` 零速站立 | 不需要其他模块；command 固定 `[0,0,0]` |
 
 ROS 2 示例：
 
@@ -46,7 +47,7 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 
 - mode 1 和 mode 2 切入后，状态机先运行配置时长的
   `free_walk + [0,0,0]`，再进入目标模型。
-- mode 3 和 mode 4 直接切入目标模型。
+- mode 3、mode 4 和 mode 5 直接切入目标模型。
 - 重复发送当前 high mode 不会重新开始站立计时，可用于上游状态重发。
 - 切入 mode 1 后，在导航层的新 low mode 和导航参数到达前保持零速。
 - 切入 mode 3 后，只有导航层的 low mode 1 速度会进入 `arm_walk` 模型；缺少
@@ -60,6 +61,8 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
   `stand_duration_s` 结束后才进入 `accurate_arrival`。
 - mode 4 不读取 low mode、导航或双臂输入；恢复模型的完整 29DoF 输出直接控制
   机器人。只有显式 high mode 4 使用恢复模型。
+- mode 5 不读取 low mode、导航或双臂输入，固定运行
+  `free_walk + [0,0,0]`，用于普通零速站立和下一轮导航前的隔离状态。
 - 初始化后未收到任何 high mode 时，状态机保持
   `high_mode=None + free_walk + [0,0,0]`。
 - 非法值会被拒绝，并使状态机回到 `free_walk + [0,0,0]` 安全等待。
