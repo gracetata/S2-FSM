@@ -250,7 +250,9 @@ joint-position observation 中。
 
 ## 6. 配置原则
 
-YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要求五个顶层段：
+YAML 定义完整运行参数，launch 只暴露 `config_file`。仅 `runtime` 中明确写成
+`${VAR}` 或 `${VAR:-default}` 的部署值可由每台 NUC 的环境覆盖；状态机、模型路由、
+关节合同和控制参数不会被环境变量隐式修改。加载器要求五个顶层段：
 
 - `topics`
 - `runtime`
@@ -264,9 +266,11 @@ default angles、Kp、Kd，共六个 29 维数组。mode 2 使用完整 standing
 mode 3 使用通用 default angles 和 standing-grasp Kp/Kd；其他模式和初始化使用
 通用组。增加新字段时必须同步修改加载器、本文档和测试；拼错字段不会被静默忽略。
 
-`runtime.log_root` 是绝对路径。每次运行的控制子进程 stdout/stderr 保存到其
-`runtime/` 子目录；每次进入 `accurate_arrival` 的 50 Hz 结构化复现日志保存到其
-`ToTarget/` 子目录。
+`runtime` 部署字符串支持 `${VAR}` 和 `${VAR:-default}`；相对路径按安装包 share
+目录解析，因而仓库和安装目录不绑定某台 NUC。每次运行的控制子进程 stdout/stderr
+保存到 `runtime.log_root/runtime/`；每次进入 `accurate_arrival` 的 50 Hz 结构化
+复现日志保存到 `runtime.log_root/ToTarget/`。正式部署推荐由每台 NUC 的
+`config/nuc.env` 指定可写日志目录和运行环境。
 
 ## 7. 关闭与故障
 

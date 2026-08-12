@@ -30,15 +30,19 @@ locomotion_controller:
     queue_depth: 10
 
   runtime:
-    # The Conda environment contains ONNX Runtime, CycloneDDS and Unitree SDK2.
-    python_executable: /home/hecbot/miniconda3/envs/locomotion_controller/bin/python
-    socket_path: /tmp/locomotion_controller.sock
-    log_root: /home/wenduo/locomotion_controller/log
+    # Deployment strings support ${VAR} and ${VAR:-default}. Set these
+    # variables per NUC instead of editing repository paths. The selected
+    # Python must contain ONNX Runtime, CycloneDDS and Unitree SDK2.
+    python_executable: ${LOCOMOTION_RUNTIME_PYTHON:-python3}
+    socket_path: ${LOCOMOTION_SOCKET_PATH:-/tmp/locomotion_controller.sock}
+    # Relative paths resolve from the installed package share directory.
+    log_root: ${LOCOMOTION_LOG_ROOT:-log}
     startup_timeout_s: 70.0
     request_timeout_s: 2.0
-    cyclonedds_home: /home/hecbot/miniconda3/envs/locomotion_controller
-    network_interface: enp86s0
-    robot_ip: 192.168.123.161
+    # "auto" means the selected Python environment prefix.
+    cyclonedds_home: ${LOCOMOTION_RUNTIME_HOME:-auto}
+    network_interface: ${LOCOMOTION_NETWORK_INTERFACE:-enp86s0}
+    robot_ip: ${LOCOMOTION_ROBOT_IP:-192.168.123.161}
     check_robot_reachable: true
     confirm_real_robot: true
 

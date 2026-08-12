@@ -22,7 +22,7 @@
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
 | `4` 鲁棒站立恢复 | 不使用 | `extreme_stand_recovery.onnx` | 无；command 固定 `[0,0,0]` |
 
-当前 velocity tracking、ArmHack walk 和 extreme stand 模型的训练来源、checkpoint 与 ONNX 哈希
+当前 velocity tracking、accurate arrival、ArmHack walk 和 extreme stand 模型的来源、checkpoint 与 ONNX 哈希
 见 [`docs/MODEL_PROVENANCE.md`](docs/MODEL_PROVENANCE.md)。
 
 mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 只接受 low mode 1
@@ -59,25 +59,30 @@ high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
 目标环境为 Ubuntu 24.04、ROS 2 Jazzy 和 Python 3.12。ONNX Runtime、
 CycloneDDS 与 Unitree SDK2 安装在配置指定的 Conda 环境中。
 
-当前 NUC 的已验证路径：
-
-- SSH：`hecbot@192.168.50.113`
-- 代码：`/home/wenduo/locomotion_controller`
-- ROS 2：`/opt/ros/jazzy`
-- 控制运行时：`/home/hecbot/miniconda3/envs/locomotion_controller`
-- 机器人网卡：`enp86s0`
-- 机器人地址：`192.168.123.161`
+仓库可以放在任意目录，也可以部署到用户名、网卡名和运行环境路径不同的多台 NUC。
+每台 NUC 从 `config/nuc.env.example` 建立自己的 `config/nuc.env`；该本机文件不会
+提交到 Git。完整说明见[多 NUC 可移植部署](docs/NUC_DEPLOYMENT.md)。
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+
+test -e config/nuc.env || cp config/nuc.env.example config/nuc.env
+# 首次创建后编辑 config/nuc.env 中的本机值
+set -a
+source "$FSM_ROOT/config/nuc.env"
+set +a
 
 chmod +x scripts/locomotion_controller_*
 colcon build --symlink-install --packages-select locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
+
+`<本机仓库目录>` 只是占位符，不是规定的绝对路径。`config/nuc.env` 中必须核对
+运行时 Python、运行环境前缀、机器人网卡、机器人 IP 和可写日志目录。
 
 ### 修改代码后重新编译
 
@@ -87,10 +92,14 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a
+source "$FSM_ROOT/config/nuc.env"
+set +a
 
 colcon build --symlink-install --packages-select locomotion_controller
-source /home/wenduo/locomotion_controller/install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ```
 
 必须看到 `Summary: 1 package finished` 后再启动程序。即使仍在同一个终端，
@@ -100,7 +109,10 @@ source /home/wenduo/locomotion_controller/install/setup.bash
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/wenduo/locomotion_controller/install/setup.bash
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/install/setup.bash"
 ```
 
 然后启动：
@@ -113,11 +125,12 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 
 ```bash
 ros2 launch locomotion_controller locomotion_controller.launch.py \
-  config_file:=/absolute/path/to/locomotion_controller.yaml
+  config_file:="$FSM_ROOT/config/locomotion_controller.yaml"
 ```
 
 启动前必须确保没有其他程序发布 `rt/lowcmd`。实机运行还必须核对
-`network_interface`、`robot_ip` 和 `confirm_real_robot`。控制器初始化时会主动
+`LOCOMOTION_NETWORK_INTERFACE`、`LOCOMOTION_ROBOT_IP` 和
+`confirm_real_robot`。控制器初始化时会主动
 释放当前 MotionSwitcher 高层模式，并严格确认进入低层调试模式，不要求启动前的
 Loco FSM ID 为 `0`。
 
@@ -126,6 +139,7 @@ Loco FSM ID 为 `0`。
 - [应用层 / 翻译层接入](docs/APPLICATION_LAYER_INTERFACE.md)
 - [双臂层接入](docs/ARM_LAYER_INTERFACE.md)
 - [整体启动脚本接入](docs/SYSTEM_STARTUP_INTEGRATION.md)
+- [多 NUC 可移植部署](docs/NUC_DEPLOYMENT.md)
 - [状态机极简使用方法](docs/QUICK_START.md)
 - [极简 Kp/Kd YAML 替换](docs/IMPEDANCE_YAML_REPLACEMENT.md)
 - [29DoF 两套顺序与模型转换](docs/JOINT_ORDER_AND_MAPPING.md)
@@ -137,27 +151,29 @@ Loco FSM ID 为 `0`。
 以下命令不会发布 `LowCmd`：
 
 ```bash
-cd /home/wenduo/locomotion_controller
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 
 PYTHONPATH=src \
-  /home/hecbot/miniconda3/envs/locomotion_controller/bin/python \
+  "$LOCOMOTION_RUNTIME_PYTHON" \
   -m unittest discover -s tests -v
 
 PYTHONNOUSERSITE=1 \
-  /home/hecbot/miniconda3/envs/locomotion_controller/bin/python \
+  "$LOCOMOTION_RUNTIME_PYTHON" \
   -c "import numpy, onnxruntime, cyclonedds, unitree_sdk2py; print('runtime imports: OK')"
 
-ping -c 1 192.168.123.161
-ip -br address show enp86s0
+ping -c 1 "$LOCOMOTION_ROBOT_IP"
+ip -br address show "$LOCOMOTION_NETWORK_INTERFACE"
 ```
 
 五个模型预热检查：
 
 ```bash
-cd /home/wenduo/locomotion_controller
+cd "$FSM_ROOT"
 
 PYTHONNOUSERSITE=1 \
-  /home/hecbot/miniconda3/envs/locomotion_controller/bin/python \
+  "$LOCOMOTION_RUNTIME_PYTHON" \
   -c "import glob, onnxruntime as ort; paths=glob.glob('models/*.onnx'); [ort.InferenceSession(path, providers=['CPUExecutionProvider']) for path in paths]; print('loaded models:', len(paths))"
 ```
 
@@ -345,24 +361,27 @@ ros2 run rqt_topic rqt_topic
 确保机器人周围无人、急停可用且没有其他 `rt/lowcmd` 发布者。终端 1：
 
 ```bash
-ssh hecbot@192.168.50.113
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
 看到 `stand-recovery initialization is complete` 后，在终端 2：
 
 ```bash
-ssh -t hecbot@192.168.50.113
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
 ```
 
-必须使用交互终端；通过 SSH 启动时保留 `-t`。键位：
+必须使用交互终端；如果由远端工作站登录任意 NUC，SSH 命令应保留 `-t`，但仓库
+不规定 NUC 的用户名或管理网 IP。键位：
 
 | 按键 | 动作 |
 | --- | --- |
@@ -424,16 +443,14 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 每次启动控制器时，运行子进程的 stdout/stderr 还会完整保存到：
 
-```text
-/home/wenduo/locomotion_controller/log/runtime/runtime_<实际时间>.log
-```
-
-屏幕输出不受影响。日志根目录由严格配置项 `runtime.log_root` 指定。
+运行日志保存到
+`$LOCOMOTION_LOG_ROOT/runtime/runtime_<实际时间>.log`。屏幕输出不受影响；实际
+根目录由本机环境变量或严格配置项 `runtime.log_root` 决定。
 
 ### ToTarget 复现日志
 
 每次控制线程真正切入 `accurate_arrival`（ToTarget）模型时，会在
-`log/ToTarget/` 新建一个 JSONL 文件。文件名格式为：
+`$LOCOMOTION_LOG_ROOT/ToTarget/` 新建一个 JSONL 文件。文件名格式为：
 
 ```text
 dx_<初始dx>_dy_<初始dy>_yaw_<初始dyaw>_<实际时间>.jsonl
@@ -488,7 +505,7 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 
 ```bash
 ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
-  -p preset_file:=/absolute/path/to/presets.json
+  -p preset_file:="$FSM_ROOT/config/simulator_presets.json"
 ```
 
 ### 双臂 JSON

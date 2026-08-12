@@ -1,0 +1,23 @@
+{
+  "schema": "hecbot.policy_contract.v1",
+  "model": "accurate_arrival.onnx",
+  "sha256": "ad4673888f9a82652ef11380ee00bd131cf2a8dfa56e734a3ede193799130edb",
+  "source_artifact": "accurate_arrival.onnx supplied on 2026-08-12",
+  "source_checkpoint": null,
+  "input": {
+    "name": "obs",
+    "type": "tensor(float)",
+    "shape": [1, 96]
+  },
+  "output": {
+    "name": "actions",
+    "type": "tensor(float)",
+    "shape": [1, 29]
+  },
+  "control_frequency_hz": 50,
+  "action_scale": 0.25,
+  "command": "navigation low mode 2 body-frame error [dx_body, dy_body, dyaw]",
+  "joint_order": "controller.policy_joint_names",
+  "default_angles": "impedance common default_angles",
+  "pd_gains": "impedance common kps/kds"
+}

@@ -6,10 +6,11 @@
 ## 1. 终端 1：启动状态机
 
 ```bash
-ssh -t hecbot@192.168.50.113
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
@@ -47,12 +48,16 @@ ros2 topic echo --once /hecbot/locomotion/policy_input std_msgs/msg/String
 ## 2. 终端 2：启动键盘 high mode 模拟
 
 ```bash
-ssh -t hecbot@192.168.50.113
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
 ```
+
+仓库不规定 NUC 用户名、SSH 地址或代码目录；远程登录时自行连接目标 NUC，并保留
+交互终端选项 `ssh -t`。首次部署和编译见 `NUC_DEPLOYMENT.md`。
 
 模拟器默认就是“按过 `k`”的静默状态：不发导航速度、位置参数和双臂参数，只允许
 用键盘切换 high/low mode，因此不会和真实导航、双臂操作节点抢输入。

@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 from numbers import Real
+import os
 from pathlib import Path
+import re
+import shutil
 from typing import Any
 
 import yaml
@@ -149,7 +152,10 @@ def load_config(
     )
 
     topics = _load_topics(_mapping(package["topics"], "topics"))
-    runtime = _load_runtime(_mapping(package["runtime"], "runtime"))
+    runtime = _load_runtime(
+        _mapping(package["runtime"], "runtime"),
+        resolved_package_root,
+    )
     state_machine = _load_state_machine(
         _mapping(package["state_machine"], "state_machine")
     )
@@ -198,7 +204,10 @@ def _load_topics(settings: dict[str, Any]) -> TopicConfig:
     return TopicConfig(queue_depth=queue_depth, **topic_values)
 
 
-def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
+def _load_runtime(
+    settings: dict[str, Any],
+    package_root: Path,
+) -> RuntimeConfig:
     expected = {
         "python_executable",
         "socket_path",
@@ -212,28 +221,54 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
         "confirm_real_robot",
     }
     _require_keys(settings, expected, "runtime")
-    python_executable = Path(
-        _nonempty_string(
-            settings["python_executable"],
-            "runtime.python_executable",
+    python_setting = _deployment_string(
+        settings["python_executable"],
+        "runtime.python_executable",
+    )
+    python_path = Path(python_setting).expanduser()
+    if python_path.is_absolute() or python_path.parent != Path("."):
+        if not python_path.is_absolute():
+            python_path = package_root / python_path
+        python_executable = python_path.resolve()
+    else:
+        discovered_python = shutil.which(python_setting)
+        if discovered_python is None:
+            raise ValueError(
+                "runtime.python_executable is not available on PATH: "
+                f"{python_setting}"
+            )
+        python_executable = Path(discovered_python).resolve()
+    if not python_executable.is_file():
+        raise ValueError(
+            "runtime.python_executable is not a file: "
+            f"{python_executable}"
         )
-    ).expanduser().absolute()
-    socket_path = Path(
-        _nonempty_string(settings["socket_path"], "runtime.socket_path")
-    ).expanduser()
-    if not socket_path.is_absolute():
-        raise ValueError("runtime.socket_path must be absolute")
-    log_root = Path(
-        _nonempty_string(settings["log_root"], "runtime.log_root")
-    ).expanduser()
-    if not log_root.is_absolute():
-        raise ValueError("runtime.log_root must be absolute")
-    cyclonedds_home = Path(
-        _nonempty_string(
-            settings["cyclonedds_home"],
-            "runtime.cyclonedds_home",
+    socket_path = _deployment_path(
+        settings["socket_path"],
+        "runtime.socket_path",
+        package_root,
+    )
+    log_root = _deployment_path(
+        settings["log_root"],
+        "runtime.log_root",
+        package_root,
+    )
+    cyclonedds_setting = _deployment_string(
+        settings["cyclonedds_home"],
+        "runtime.cyclonedds_home",
+    )
+    if cyclonedds_setting == "auto":
+        cyclonedds_home = python_executable.parent.parent
+    else:
+        cyclonedds_home = _resolved_path(
+            cyclonedds_setting,
+            package_root,
         )
-    ).expanduser().resolve()
+    if not cyclonedds_home.is_dir():
+        raise ValueError(
+            "runtime.cyclonedds_home is not a directory: "
+            f"{cyclonedds_home}"
+        )
     startup_timeout_s = _positive_float(
         settings["startup_timeout_s"],
         "runtime.startup_timeout_s",
@@ -242,11 +277,11 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
         settings["request_timeout_s"],
         "runtime.request_timeout_s",
     )
-    network_interface = _nonempty_string(
+    network_interface = _deployment_string(
         settings["network_interface"],
         "runtime.network_interface",
     )
-    robot_ip = _nonempty_string(settings["robot_ip"], "runtime.robot_ip")
+    robot_ip = _deployment_string(settings["robot_ip"], "runtime.robot_ip")
     should_check_robot = _boolean(
         settings["check_robot_reachable"],
         "runtime.check_robot_reachable",
@@ -257,8 +292,8 @@ def _load_runtime(settings: dict[str, Any]) -> RuntimeConfig:
     )
     return RuntimeConfig(
         python_executable=python_executable,
-        socket_path=socket_path.resolve(),
-        log_root=log_root.resolve(),
+        socket_path=socket_path,
+        log_root=log_root,
         startup_timeout_s=startup_timeout_s,
         request_timeout_s=request_timeout_s,
         cyclonedds_home=cyclonedds_home,
@@ -547,6 +582,51 @@ def _nonempty_string(value: object, label: str) -> str:
     if not result:
         raise ValueError(f"{label} cannot be empty")
     return result
+
+
+_ENVIRONMENT_EXPRESSION = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}"
+)
+
+
+def _deployment_string(value: object, label: str) -> str:
+    """Expand ${VAR} and ${VAR:-default} without binding config to one NUC."""
+
+    source = _nonempty_string(value, label)
+
+    def replace(match: re.Match[str]) -> str:
+        variable = match.group(1)
+        default = match.group(2)
+        configured = os.environ.get(variable)
+        if configured:
+            return configured
+        if default is not None:
+            return default
+        raise ValueError(
+            f"{label} requires environment variable {variable}"
+        )
+
+    result = _ENVIRONMENT_EXPRESSION.sub(replace, source).strip()
+    if not result:
+        raise ValueError(f"{label} expands to an empty string")
+    if "${" in result:
+        raise ValueError(f"{label} contains an invalid environment expression")
+    return result
+
+
+def _deployment_path(
+    value: object,
+    label: str,
+    package_root: Path,
+) -> Path:
+    return _resolved_path(_deployment_string(value, label), package_root)
+
+
+def _resolved_path(value: str, package_root: Path) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = package_root / path
+    return path.resolve()
 
 
 def _boolean(value: object, label: str) -> bool:

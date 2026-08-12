@@ -60,8 +60,11 @@ shape: [1, 96]
 ## 3. 查看和录包
 
 ```bash
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-source /home/wenduo/locomotion_controller/install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 
 ros2 topic hz /hecbot/locomotion/policy_input
 ros2 topic echo --once /hecbot/locomotion/policy_input std_msgs/msg/String

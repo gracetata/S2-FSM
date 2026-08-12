@@ -7,10 +7,12 @@ Mode 4 独立运行鲁棒站立恢复模型，不需要 low mode、导航、双�
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 git pull
 colcon build --symlink-install --packages-select locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ```
 
 ## 2. 启动状态机
@@ -18,8 +20,11 @@ source install/setup.bash
 终端 1：
 
 ```bash
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-source /home/wenduo/locomotion_controller/install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
@@ -38,8 +43,11 @@ five ONNX models are ready; stand-recovery initialization is complete
 终端 2：
 
 ```bash
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
+set -a; source "$FSM_ROOT/config/nuc.env"; set +a
 source /opt/ros/jazzy/setup.bash
-source /home/wenduo/locomotion_controller/install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
 ```
 

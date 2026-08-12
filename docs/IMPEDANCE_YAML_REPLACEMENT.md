@@ -12,7 +12,8 @@
 ## 使用全默认文件
 
 ```bash
-cd /home/wenduo/locomotion_controller
+cd <本机仓库目录>
+export FSM_ROOT="$(pwd -P)"
 git pull
 ```
 
@@ -26,9 +27,9 @@ impedance_file: impedancepara_default.yaml
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-cd /home/wenduo/locomotion_controller
+cd "$FSM_ROOT"
 colcon build --symlink-install --packages-select locomotion_controller
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ```
 
 确认安装后的配置和文件：
