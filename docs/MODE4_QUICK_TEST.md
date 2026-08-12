@@ -66,6 +66,6 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 ## 4. 退出
 
-1. 终端 2 按 `q`；
+1. 终端 2 按 `Esc` 或 `Ctrl+C`；
 2. 终端 1 按 `Ctrl+C`；
 3. 等待控制器完成阻尼收尾后再断开。

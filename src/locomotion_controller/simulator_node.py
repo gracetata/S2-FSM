@@ -20,20 +20,25 @@ from std_msgs.msg import Bool, Float32MultiArray, String, UInt8
 from .config import PACKAGE_NAME, load_config
 from .protocol import ARM_COMMAND_SCHEMA
 from .simulator_presets import (
+    ARM_CYCLE_POSE_COUNT,
+    KEYBOARD_VELOCITY_DELTAS,
     ZERO_COMMAND,
     ArmPose,
     PresetCatalog,
     VelocityTrajectory,
+    adjust_keyboard_velocity,
     load_preset_catalog,
+    next_arm_cycle_pose_index,
 )
 
 
 PUBLISH_PERIOD_S = 0.05
-# Numeric key 4 is reserved for high mode 4. The old forward trajectory key
-# moves to w; lateral/yaw keep their existing 5/6 keys.
-VELOCITY_KEYS = ("w", "5", "6")
+# W/S, A/D and Q/E are reserved for incremental velocity control. Fixed test
+# trajectories use F/5/6.
+VELOCITY_KEYS = ("f", "5", "6")
 POSITION_KEYS = ("7", "8", "9")
 ARM_POSE_KEYS = ("z", "x", "c", "b")
+ARM_CYCLE_HIGH_MODES = {2, 3}
 PARAMETER_PUBLISHING_ENABLED_AT_STARTUP = False
 
 
@@ -99,6 +104,7 @@ class SimulatorNode(Node):
         self._velocity_started_at = 0.0
         initial_pose = self._catalog.arm_poses[0]
         self._arm_pose = initial_pose
+        self._arm_pose_index = 0
         self._arm_positions = initial_pose.positions
         self._arm_velocities = (0.0,) * len(initial_pose.positions)
         self._arm_sequence = monotonic_ns()
@@ -168,7 +174,7 @@ class SimulatorNode(Node):
         return False
 
     def _handle_key(self, key: str) -> bool:
-        if key == "q":
+        if key == "\x1b":
             self.get_logger().info("simulator stopped by keyboard")
             rclpy.shutdown()
             return True
@@ -177,23 +183,27 @@ class SimulatorNode(Node):
             return False
         if key == "k":
             self._toggle_parameter_publishing()
+            self._log_current_state("parameter publishing toggled")
             return False
         if key in {"1", "2", "3", "4"}:
             self._high_mode = int(key)
             if self._is_controller_initialized:
                 self._publish_mode(self._high_mode_publisher, self._high_mode)
-            self.get_logger().info(f"high mode -> {self._high_mode}")
+            self._log_current_state(f"high mode -> {self._high_mode}")
             return False
         if key in {"v", "p"}:
             self._low_mode = 1 if key == "v" else 2
             self._stop_navigation()
             if self._is_controller_initialized:
                 self._publish_mode(self._low_mode_publisher, self._low_mode)
-            self.get_logger().info(f"low mode -> {self._low_mode}")
+            self._log_current_state(f"low mode -> {self._low_mode}")
             return False
         if key == "0":
             self._stop_navigation()
-            self.get_logger().info("navigation -> [0, 0, 0]")
+            self._log_current_state("navigation zeroed")
+            return False
+        if key in KEYBOARD_VELOCITY_DELTAS:
+            self._adjust_velocity(key)
             return False
         if key in VELOCITY_KEYS:
             index = VELOCITY_KEYS.index(key)
@@ -206,14 +216,29 @@ class SimulatorNode(Node):
             target = self._catalog.position_targets[index]
             self._velocity_trajectory = None
             self._navigation_command = target.command
-            self.get_logger().info(
-                f"position target -> {target.name}: {target.command}"
-            )
+            self._log_current_state(f"position target -> {target.name}")
             return False
         if key in ARM_POSE_KEYS:
             index = ARM_POSE_KEYS.index(key)
-            self._set_arm_pose(self._catalog.arm_poses[index])
+            self._set_arm_pose(self._catalog.arm_poses[index], index)
+            return False
+        if key == " ":
+            self._cycle_arm_pose()
         return False
+
+    def _adjust_velocity(self, key: str) -> None:
+        self._velocity_trajectory = None
+        if self._low_mode != 1:
+            self._low_mode = 1
+            self._navigation_command = ZERO_COMMAND
+            if self._is_controller_initialized:
+                self._publish_mode(self._low_mode_publisher, self._low_mode)
+        self._navigation_command = adjust_keyboard_velocity(
+            self._navigation_command,
+            key,
+            self._config.controller.max_velocity_command,
+        )
+        self._log_current_state(f"velocity key -> {key.upper()}")
 
     def _start_velocity_trajectory(
         self,
@@ -222,22 +247,54 @@ class SimulatorNode(Node):
         self._velocity_trajectory = trajectory
         self._velocity_started_at = monotonic()
         self._navigation_command = ZERO_COMMAND
-        self.get_logger().info(
-            f"velocity trajectory -> {trajectory.name}: "
-            f"{trajectory.description_zh}"
+        self._log_current_state(
+            f"velocity trajectory -> {trajectory.name}"
         )
 
-    def _set_arm_pose(self, pose: ArmPose) -> None:
+    def _set_arm_pose(self, pose: ArmPose, index: int) -> None:
         self._arm_pose = pose
+        self._arm_pose_index = index
         self._arm_positions = pose.positions
         self._arm_velocities = (0.0,) * len(pose.positions)
-        self.get_logger().info(
-            f"arm pose -> {pose.name}: {pose.description_zh}"
-        )
+        self._log_current_state(f"arm pose -> {pose.name}")
+
+    def _cycle_arm_pose(self) -> None:
+        if self._high_mode not in ARM_CYCLE_HIGH_MODES:
+            self.get_logger().warning(
+                "SPACE arm-pose cycle is available only in high modes 2/3"
+            )
+            return
+        next_index = next_arm_cycle_pose_index(self._arm_pose_index)
+        self._set_arm_pose(self._catalog.arm_poses[next_index], next_index)
 
     def _stop_navigation(self) -> None:
         self._velocity_trajectory = None
         self._navigation_command = ZERO_COMMAND
+
+    def _log_current_state(self, event: str) -> None:
+        high_mode = getattr(self, "_high_mode", None)
+        low_mode = getattr(self, "_low_mode", None)
+        command = getattr(self, "_navigation_command", ZERO_COMMAND)
+        arm_pose = getattr(getattr(self, "_arm_pose", None), "name", "none")
+        trajectory = getattr(self, "_velocity_trajectory", None)
+        trajectory_name = (
+            getattr(trajectory, "name", "active")
+            if trajectory is not None
+            else "none"
+        )
+        publishing = (
+            "on"
+            if getattr(self, "_is_parameter_publishing_enabled", False)
+            else "off"
+        )
+        self.get_logger().info(
+            "[KEYBOARD_STATE] "
+            f"event={event} | publishing={publishing} | "
+            f"high_mode={high_mode} | low_mode={low_mode} | "
+            f"navigation=[{command[0]:.2f}, {command[1]:.2f}, "
+            f"{command[2]:.2f}] | arm_pose={arm_pose} | "
+            f"trajectory={trajectory_name}"
+        )
 
     def _toggle_parameter_publishing(self) -> None:
         self._is_parameter_publishing_enabled = (
@@ -309,14 +366,19 @@ class SimulatorNode(Node):
             "  4: high mode 4 (stand recovery; zero command; direct switch)",
             "  v: low mode 1 (velocity for high modes 1 and 3)",
             "  p: low mode 2 (position for high mode 1 only)",
+            "  W/S: increase/decrease vx by 0.05 m/s",
+            "  A/D: increase/decrease vy by 0.05 m/s",
+            "  Q/E: increase/decrease yaw rate by 0.05 rad/s",
             "  0: cancel navigation and publish [0,0,0]",
             "  k: start/stop navigation and arm parameter publishing "
             "(starts stopped)",
             *velocity_lines,
             *position_lines,
             *arm_lines,
+            "  SPACE: cycle z/x/c arm poses in high modes 2/3",
+            "  Every accepted change prints one [KEYBOARD_STATE] line",
             "  h: print help",
-            "  q: quit",
+            "  ESC or Ctrl+C: quit",
         ]
         self.get_logger().info("\n".join(lines))
 

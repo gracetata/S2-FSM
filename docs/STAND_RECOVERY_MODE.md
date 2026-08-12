@@ -122,7 +122,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 "model":"stand_recovery","high_mode":4,"navigation_input":{"model_input":[0.0,0.0,0.0]}
 ```
 
-原键盘的“前进三秒后停止”从数字 `4` 改为 `w`；`5/6` 仍是横移和转向轨迹。
+固定的“前进三秒后停止”轨迹使用 `f`；`5/6` 仍是横移和转向轨迹。
 
-测试结束先在键盘模拟器按 `q`，再在控制器终端按 `Ctrl+C`，等待阻尼收尾。真机
+测试结束先在键盘模拟器按 `Esc` 或 `Ctrl+C`，再在控制器终端按 `Ctrl+C`，等待阻尼收尾。真机
 恢复测试必须确保周围无人、急停可用，并从可控的小扰动开始。

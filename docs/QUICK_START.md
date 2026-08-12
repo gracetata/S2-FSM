@@ -68,13 +68,21 @@ ros2 run locomotion_controller locomotion_controller_simulator
 顺序：
 
 ```text
-速度导航：k → v → 1 → w/5/6
+速度导航：k → 1 → W/S、A/D、Q/E（速度增量键自动选择 low mode 1）
 位置导航：p → 1 → 7/8/9
-站立双臂：2 → z/x/c/b
-双臂行走：v → 3 → z/x/c，并用 w/5/6 发送速度
+站立双臂：2 → Space 循环 z/x/c，或直接按 z/x/c/b
+双臂行走：3 → Space 循环 z/x/c，并用 W/S、A/D、Q/E 调整速度
 鲁棒站立恢复：4
 停止导航：0
 ```
+
+每次 `W/S`、`A/D` 分别增减 `0.05 m/s`，`Q/E` 分别增减
+`0.05 rad/s`；按 `0` 严格归零。固定测试轨迹仍可用 `f/5/6`。空格仅在 high
+mode 2/3 中生效，只循环三个推荐姿态，不包含额外姿态 `b`。
+
+每次按键改变模式、速度或双臂姿态后，终端都会打印 `[KEYBOARD_STATE]`，其中包含
+当前 High Mode、Low Mode、`[vx,vy,yaw_rate]`、双臂姿态和参数发布开关。看到
+`publishing=off` 时，速度和双臂值尚未发布，需要先按 `k`。
 
 `z/x/c/b` 都能设置双臂姿态；其中 `z/x/c` 对应
 `models/walk_with_object_arm_pose_set.json` 的三个模型预设，是 high mode 3
@@ -84,7 +92,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 ## 5. 退出
 
-1. 在终端 2 按 `q`，只退出键盘模拟器；
+1. 在终端 2 按 `Esc` 或 `Ctrl+C`，只退出键盘模拟器；
 2. 在终端 1 按 `Ctrl+C`，等待状态机完成阻尼收尾并退出。
 
 正式的应用层负责发布 high mode、整体启动脚本负责启动和等待 initialized 后，就

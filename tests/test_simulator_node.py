@@ -61,6 +61,7 @@ class SimulatorNodeTest(unittest.TestCase):
             _is_parameter_publishing_enabled=False,
             _high_mode_publisher=MagicMock(),
             _publish_mode=MagicMock(),
+            _log_current_state=MagicMock(),
             get_logger=MagicMock(return_value=MagicMock()),
         )
 
@@ -72,6 +73,74 @@ class SimulatorNodeTest(unittest.TestCase):
             node._high_mode_publisher,
             4,
         )
+
+    def test_velocity_key_activates_low_mode_one_and_starts_from_zero(self):
+        node = SimpleNamespace(
+            _velocity_trajectory=object(),
+            _low_mode=2,
+            _navigation_command=(0.3, 0.0, 0.0),
+            _is_controller_initialized=True,
+            _low_mode_publisher=MagicMock(),
+            _publish_mode=MagicMock(),
+            _log_current_state=MagicMock(),
+            _config=SimpleNamespace(
+                controller=SimpleNamespace(
+                    max_velocity_command=(0.8, 0.5, 1.57),
+                )
+            ),
+            get_logger=MagicMock(return_value=MagicMock()),
+        )
+
+        SimulatorNode._adjust_velocity(node, "w")
+
+        self.assertEqual(node._low_mode, 1)
+        self.assertEqual(node._navigation_command, (0.05, 0.0, 0.0))
+        self.assertIsNone(node._velocity_trajectory)
+        node._publish_mode.assert_called_once_with(
+            node._low_mode_publisher,
+            1,
+        )
+
+    def test_space_cycles_recommended_arm_poses_only_in_modes_two_three(self):
+        poses = (object(), object(), object(), object())
+        node = SimpleNamespace(
+            _high_mode=2,
+            _arm_pose_index=0,
+            _catalog=SimpleNamespace(arm_poses=poses),
+            _set_arm_pose=MagicMock(),
+            get_logger=MagicMock(return_value=MagicMock()),
+        )
+
+        SimulatorNode._cycle_arm_pose(node)
+
+        node._set_arm_pose.assert_called_once_with(poses[1], 1)
+
+        node._set_arm_pose.reset_mock()
+        node._high_mode = 1
+        SimulatorNode._cycle_arm_pose(node)
+        node._set_arm_pose.assert_not_called()
+
+    def test_current_state_log_contains_modes_velocity_arm_and_publishing(self):
+        logger = MagicMock()
+        node = SimpleNamespace(
+            _high_mode=3,
+            _low_mode=1,
+            _navigation_command=(0.25, -0.1, 0.35),
+            _arm_pose=SimpleNamespace(name="down"),
+            _velocity_trajectory=None,
+            _is_parameter_publishing_enabled=True,
+            get_logger=MagicMock(return_value=logger),
+        )
+
+        SimulatorNode._log_current_state(node, "velocity key -> W")
+
+        message = logger.info.call_args.args[0]
+        self.assertIn("[KEYBOARD_STATE]", message)
+        self.assertIn("publishing=on", message)
+        self.assertIn("high_mode=3", message)
+        self.assertIn("low_mode=1", message)
+        self.assertIn("navigation=[0.25, -0.10, 0.35]", message)
+        self.assertIn("arm_pose=down", message)
 
 
 if __name__ == "__main__":

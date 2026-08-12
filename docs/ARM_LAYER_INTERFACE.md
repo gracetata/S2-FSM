@@ -109,11 +109,13 @@ mode 2 和 mode 3 使用完全相同的 standing-grasp 专用 Kp/Kd。双臂层�
 | `x` | `pos2_down` | 双臂下垂 | 推荐预设 |
 | `c` | `pos3_front` | 双臂靠前 | 推荐预设 |
 | `b` | 不在该 JSON 中 | 额外的对称持物联调姿态 | 仅联调，非模型预设 |
+| `Space` | 循环 `pos1_back → pos2_down → pos3_front` | 三个推荐姿态循环 | 仅 high mode 2/3 生效 |
 
 因此，当前键盘模拟器的 `z`、`x`、`c`、`b` 都能设置双臂姿态，但在 high mode 3
 持物行走时，建议优先使用 `z`、`x`、`c` 对应的三个模型预设。`b` 来自
 `config/simulator_presets.json`，用于额外接口联调，不应被理解成
-`walk_with_object_arm_pose_set.json` 的第四个预设。
+`walk_with_object_arm_pose_set.json` 的第四个预设。High mode 2/3 中按空格会在
+`z/x/c` 三个推荐姿态之间循环，不会切到 `b`；模拟参数发布必须已经用 `k` 开启。
 
 正式双臂层不接收键盘字符，而应读取上述 JSON 的 `left`、`right` 数组，按本文件
 第 3 节的顺序拼成 `arm_q` 后持续发布。切换姿态时仍须由双臂层生成平滑、限速且

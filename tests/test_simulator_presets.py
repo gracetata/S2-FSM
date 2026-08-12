@@ -4,9 +4,13 @@ import tempfile
 import unittest
 
 from locomotion_controller.simulator_presets import (
+    ARM_CYCLE_POSE_COUNT,
+    KEYBOARD_VELOCITY_DELTAS,
     PRESET_SCHEMA,
     ZERO_COMMAND,
+    adjust_keyboard_velocity,
     load_preset_catalog,
+    next_arm_cycle_pose_index,
 )
 
 
@@ -64,6 +68,43 @@ class SimulatorPresetsTest(unittest.TestCase):
             trajectory.sample(trajectory.duration_s),
             ZERO_COMMAND,
         )
+
+    def test_keyboard_velocity_keys_adjust_all_axes_and_return_to_zero(self):
+        limits = (0.8, 0.5, 1.57)
+        command = ZERO_COMMAND
+        for positive_key, negative_key in (("w", "s"), ("a", "d"), ("q", "e")):
+            increased = adjust_keyboard_velocity(
+                command,
+                positive_key,
+                limits,
+            )
+            self.assertNotEqual(increased, command)
+            self.assertEqual(
+                adjust_keyboard_velocity(increased, negative_key, limits),
+                ZERO_COMMAND,
+            )
+        self.assertEqual(
+            set(KEYBOARD_VELOCITY_DELTAS),
+            {"w", "s", "a", "d", "q", "e"},
+        )
+
+    def test_keyboard_velocity_is_clamped_per_axis(self):
+        limits = (0.8, 0.5, 1.57)
+        self.assertEqual(
+            adjust_keyboard_velocity((0.8, 0.5, 1.57), "w", limits),
+            (0.8, 0.5, 1.57),
+        )
+        self.assertEqual(
+            adjust_keyboard_velocity((-0.8, -0.5, -1.57), "e", limits),
+            (-0.8, -0.5, -1.57),
+        )
+
+    def test_space_cycle_uses_only_three_recommended_arm_poses(self):
+        self.assertEqual(ARM_CYCLE_POSE_COUNT, 3)
+        self.assertEqual(next_arm_cycle_pose_index(0), 1)
+        self.assertEqual(next_arm_cycle_pose_index(1), 2)
+        self.assertEqual(next_arm_cycle_pose_index(2), 0)
+        self.assertEqual(next_arm_cycle_pose_index(3), 0)
 
     def test_unknown_preset_field_is_rejected(self):
         value = json.loads(PRESET_FILE.read_text(encoding="utf-8"))

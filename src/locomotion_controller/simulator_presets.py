@@ -15,6 +15,55 @@ PRESET_SCHEMA = "hecbot.locomotion_test_presets.v1"
 ARM_JOINTS_PER_SIDE = 7
 NAVIGATION_COMMAND_SIZE = 3
 ZERO_COMMAND = (0.0, 0.0, 0.0)
+KEYBOARD_VELOCITY_DELTAS = {
+    "w": (0.05, 0.0, 0.0),
+    "s": (-0.05, 0.0, 0.0),
+    "a": (0.0, 0.05, 0.0),
+    "d": (0.0, -0.05, 0.0),
+    "q": (0.0, 0.0, 0.05),
+    "e": (0.0, 0.0, -0.05),
+}
+ARM_CYCLE_POSE_COUNT = 3
+
+
+def adjust_keyboard_velocity(
+    command: tuple[float, float, float],
+    key: str,
+    limits: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Apply one keyboard velocity increment and clamp each component."""
+
+    try:
+        delta = KEYBOARD_VELOCITY_DELTAS[key]
+    except KeyError as error:
+        raise ValueError(f"unsupported velocity key: {key!r}") from error
+    if (
+        len(command) != NAVIGATION_COMMAND_SIZE
+        or len(limits) != NAVIGATION_COMMAND_SIZE
+    ):
+        raise ValueError("velocity command and limits must contain three values")
+    if any(not isfinite(value) for value in command):
+        raise ValueError("velocity command must contain finite values")
+    if any(limit <= 0.0 or not isfinite(limit) for limit in limits):
+        raise ValueError("velocity limits must contain three positive values")
+    adjusted = tuple(
+        max(-limit, min(limit, value + increment))
+        for value, increment, limit in zip(command, delta, limits)
+    )
+    return tuple(
+        0.0 if abs(value) < 1.0e-12 else value
+        for value in adjusted
+    )
+
+
+def next_arm_cycle_pose_index(current_index: int) -> int:
+    """Return the next z/x/c pose index, excluding the extra b pose."""
+
+    if current_index < 0:
+        raise ValueError("arm pose index cannot be negative")
+    if current_index >= ARM_CYCLE_POSE_COUNT:
+        return 0
+    return (current_index + 1) % ARM_CYCLE_POSE_COUNT
 
 
 @dataclass(frozen=True)
@@ -124,6 +173,7 @@ def load_preset_catalog(path: str | Path) -> PresetCatalog:
         velocity_trajectories=velocity_trajectories,
         position_targets=position_targets,
     )
+
 
 def _load_arm_pose(value: object, index: int) -> ArmPose:
     label = f"arm_poses[{index}]"
