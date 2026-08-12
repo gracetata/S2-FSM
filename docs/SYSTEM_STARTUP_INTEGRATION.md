@@ -16,7 +16,7 @@
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 
@@ -43,12 +43,10 @@ ros2 topic echo --once /hecbot/locomotion/initialized std_msgs/msg/Bool
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 fsm_root="${FSM_ROOT:?set FSM_ROOT to this NUC's repository directory}"
-set -a
-source "${fsm_root}/config/nuc.env"
-set +a
+source "${fsm_root}/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "${fsm_root}/install/setup.bash"
 

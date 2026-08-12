@@ -33,16 +33,17 @@ locomotion_controller:
     # Deployment strings support ${VAR} and ${VAR:-default}. Set these
     # variables per NUC instead of editing repository paths. The selected
     # Python must contain ONNX Runtime, CycloneDDS and Unitree SDK2.
-    python_executable: ${LOCOMOTION_RUNTIME_PYTHON:-python3}
+    # The five per-NUC values intentionally have no fallback: a missing local
+    # environment must fail before the controller can connect to the robot.
+    python_executable: ${LOCOMOTION_RUNTIME_PYTHON}
     socket_path: ${LOCOMOTION_SOCKET_PATH:-/tmp/locomotion_controller.sock}
     # Relative paths resolve from the installed package share directory.
-    log_root: ${LOCOMOTION_LOG_ROOT:-log}
+    log_root: ${LOCOMOTION_LOG_ROOT}
     startup_timeout_s: 70.0
     request_timeout_s: 2.0
-    # "auto" means the selected Python environment prefix.
-    cyclonedds_home: ${LOCOMOTION_RUNTIME_HOME:-auto}
-    network_interface: ${LOCOMOTION_NETWORK_INTERFACE:-enp86s0}
-    robot_ip: ${LOCOMOTION_ROBOT_IP:-192.168.123.161}
+    cyclonedds_home: ${LOCOMOTION_RUNTIME_HOME}
+    network_interface: ${LOCOMOTION_NETWORK_INTERFACE}
+    robot_ip: ${LOCOMOTION_ROBOT_IP}
     check_robot_reachable: true
     confirm_real_robot: true
 

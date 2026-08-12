@@ -62,7 +62,7 @@ shape: [1, 96]
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 

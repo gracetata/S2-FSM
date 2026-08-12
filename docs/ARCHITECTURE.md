@@ -267,7 +267,9 @@ mode 3 使用通用 default angles 和 standing-grasp Kp/Kd；其他模式和初
 通用组。增加新字段时必须同步修改加载器、本文档和测试；拼错字段不会被静默忽略。
 
 `runtime` 部署字符串支持 `${VAR}` 和 `${VAR:-default}`；相对路径按安装包 share
-目录解析，因而仓库和安装目录不绑定某台 NUC。每次运行的控制子进程 stdout/stderr
+目录解析，因而仓库和安装目录不绑定某台 NUC。运行时 Python、环境前缀、日志目录、
+网卡和机器人 IP 必须由本机 `config/nuc.env` 提供，不允许回退到系统 Python 或公共
+机器参数；只有 Unix socket 路径保留安全默认值。每次运行的控制子进程 stdout/stderr
 保存到 `runtime.log_root/runtime/`；每次进入 `accurate_arrival` 的 50 Hz 结构化
 复现日志保存到 `runtime.log_root/ToTarget/`。正式部署推荐由每台 NUC 的
 `config/nuc.env` 指定可写日志目录和运行环境。
