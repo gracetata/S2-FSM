@@ -1,8 +1,12 @@
 {
   "schema_version": 1,
-  "task": "armhack_walk_switchable_arm_fixed_or_joystick_velocity",
+  "task": "armhack_walk_two_goal_robust_gated_experts",
   "robot_asset": "s3_g1_29dof",
   "control_frequency_hz": 50,
+  "policy_sha256": "011c4bbf47846285328045967e45b78274d3c81c7cff315fc19b5c9aae095d5b",
+  "source_thread": "019f5fd3-0663-7142-9a9e-ade03c8480a7",
+  "source_checkpoint": "checkpoint/walk/armhack_two_goal_20260811/model_armhack_walk_two_goal_robust.pt",
+  "source_checkpoint_sha256": "00a36bd58ce63c39e7c441d507e4111df92281ea1f5b59fe6869fb28830a00ce",
   "source_nav2_csv": "nav2_cmd_vel_raw_success.csv",
   "source_nav2_csv_sha256": "76a4516588b855351eb3eb8c2da26e291603876c1a4a1b9c7bacd77a53807b5a",
   "source_nav2_rows": 331010,
@@ -11,6 +15,11 @@
     "max": [0.6, 0.3, 0.6]
   },
   "recommended_fixed_command": [0.35, 0.0, 0.0],
+  "policy_routing": {
+    "base_actor": "model_10990 actor preserved for ordinary commands",
+    "lateral_expert": "strict [0, vy, 0] command",
+    "yaw_expert": "strict [0, 0, yaw_rate] command"
+  },
   "default_pose_name": "pos2_down",
   "command_switch": {
     "initial_state": "zero",
@@ -50,6 +59,9 @@
     "default_duration_s": 2.0
   },
   "notes": [
+    "High Mode 3 receives only the navigation Low Mode 1 velocity command as current-frame policy input.",
+    "The external 14DoF arm command overrides policy outputs after inference and the complete overridden action becomes next-frame previous_action.",
+    "The robust lateral and pure-yaw experts were accepted across pos1_back, pos2_down and pos3_front arm poses.",
     "The bounds are component-wise extrema of the raw Nav2 CSV and are used as a hard deployment envelope.",
     "Fixed mode starts at zero command and V toggles only between zero and the configured fixed command.",
     "Joystick mode maps Linux joystick axes directly inside the raw Nav2 command envelope.",

@@ -1,0 +1,26 @@
+{
+  "schema": "hecbot.policy_contract.v1",
+  "model": "walk_with_object.onnx",
+  "sha256": "011c4bbf47846285328045967e45b78274d3c81c7cff315fc19b5c9aae095d5b",
+  "source_thread": "019f5fd3-0663-7142-9a9e-ade03c8480a7",
+  "source_checkpoint": "checkpoint/walk/armhack_two_goal_20260811/model_armhack_walk_two_goal_robust.pt",
+  "source_checkpoint_sha256": "00a36bd58ce63c39e7c441d507e4111df92281ea1f5b59fe6869fb28830a00ce",
+  "input": {
+    "name": "obs",
+    "type": "tensor(float)",
+    "shape": [1, 96]
+  },
+  "output": {
+    "name": "actions",
+    "type": "tensor(float)",
+    "shape": [1, 29]
+  },
+  "control_frequency_hz": 50,
+  "action_scale": 0.25,
+  "command": "navigation low mode 1 [vx, vy, yaw_rate]",
+  "arm_command": "post-inference 14DoF output override; never a current-frame model input",
+  "previous_action": "complete post-override executed 29DoF action",
+  "joint_order": "controller.policy_joint_names",
+  "default_angles": "impedance common default_angles",
+  "pd_gains": "impedance arm_stand kps/kds"
+}

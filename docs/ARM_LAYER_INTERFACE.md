@@ -87,6 +87,12 @@ mode 3 直接切换。双臂层可以持续发布，不需要自行实现这段�
 mode 3 的行走速度由导航层通过 low mode 1 和
 `/hecbot/locomotion/navigation_command` 提供。双臂层不发送导航速度。
 
+当前 mode 3 使用 2026-08-11 的 `armhack_two_goal` 稳健模型。该模型保留普通命令
+主策略，并增强严格侧移和纯 yaw 原地转身；模型版本、checkpoint 和哈希见
+[`MODEL_PROVENANCE.md`](MODEL_PROVENANCE.md)。这次模型升级不改变双臂接口语义：
+双臂动作仍然只覆盖推理输出，绝不是当前帧模型输入；覆盖后的完整动作仍必须写入
+下一帧 `previous_action`。
+
 mode 2 和 mode 3 使用完全相同的 standing-grasp 专用 Kp/Kd。双臂层不需要在
 消息中发送增益。
 
