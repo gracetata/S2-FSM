@@ -6,7 +6,6 @@ from collections import deque
 from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
-import json
 from pathlib import Path
 from threading import Event, Lock, Thread
 from time import monotonic, sleep
@@ -35,6 +34,10 @@ from .state_machine import (
     SEMANTICS_TARGET_POSE,
     ControlSelection,
     LocomotionStateMachine,
+)
+from .temperature_monitor import (
+    ANKLE_JOINT_NAMES,
+    AnkleTemperatureMonitor,
 )
 from .totarget_logger import ToTargetLogger
 
@@ -167,6 +170,16 @@ class UnitreeController:
             dtype=np.float32,
         )
         self._arm_baseline = np.zeros(len(ARM_JOINT_NAMES), dtype=np.float32)
+        self._ankle_motor_indices = tuple(
+            (
+                joint_name,
+                config.motor_indices[
+                    config.motor_joint_names.index(joint_name)
+                ],
+            )
+            for joint_name in ANKLE_JOINT_NAMES
+        )
+        self._ankle_temperature_monitor = AnkleTemperatureMonitor()
 
         self._low_command = unitree_hg_msg_dds__LowCmd_()
         self._low_state = unitree_hg_msg_dds__LowState_()
@@ -314,11 +327,13 @@ class UnitreeController:
             round(self._config.startup_move_s / self._config.control_dt)
         )
         for step in range(step_count):
+            now = monotonic()
             if (
-                monotonic() - self._last_lowstate_received_at
+                now - self._last_lowstate_received_at
                 > self._config.lowstate_runtime_timeout_s
             ):
                 raise RuntimeError("LowState stream timed out during startup motion")
+            self._check_ankle_motor_temperatures(now)
             alpha = (step + 1) / step_count
             blend = alpha**3 * (10.0 + alpha * (-15.0 + 6.0 * alpha))
             target = start_motor + (target_motor - start_motor) * blend
@@ -372,6 +387,7 @@ class UnitreeController:
             > self._config.lowstate_runtime_timeout_s
         ):
             raise RuntimeError("LowState stream timed out")
+        self._check_ankle_motor_temperatures(now)
 
         selection = self._state_machine.select(now)
         if selection.model_name != self._active_model_name:
@@ -419,7 +435,7 @@ class UnitreeController:
         )
         inference_duration_s = monotonic() - inference_started_at
         raw_model_output = action.copy()
-        self._log_inference_frame(selection, command, action)
+        self._inference_frame_index += 1
         target_velocity = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         direct_arm_target: np.ndarray | None = None
         if selection.model_name in {MODEL_ARM_STAND, MODEL_ARM_WALK}:
@@ -519,36 +535,32 @@ class UnitreeController:
                 }
             )
 
-    def _log_inference_frame(
-        self,
-        selection: ControlSelection,
-        model_command: np.ndarray,
-        model_output: np.ndarray,
-    ) -> None:
-        arm_command = selection.arm_command
-        arm_override = (
-            None if arm_command is None else arm_command.to_payload()
+    def _check_ankle_motor_temperatures(self, now: float) -> None:
+        readings = self._ankle_temperature_monitor.check(
+            (
+                (
+                    joint_name,
+                    motor_index,
+                    self._low_state.motor_state[motor_index].temperature,
+                )
+                for joint_name, motor_index in self._ankle_motor_indices
+            ),
+            now,
         )
-        payload = {
-            "event": "policy_inference",
-            "frame": self._inference_frame_index,
-            "model": selection.model_name,
-            "high_mode": selection.high_mode,
-            "low_mode": selection.low_mode,
-            "standing_transition": selection.is_standing_transition,
-            "navigation_input": {
-                "semantics": selection.command_semantics,
-                "selected": list(selection.command),
-                "model_input": model_command.tolist(),
-            },
-            "arm_output_override": arm_override,
-            "model_output": model_output.tolist(),
-        }
+        if not readings:
+            return
+        details = "; ".join(
+            f"{reading.joint_name}(motor_index={reading.motor_index},"
+            f"temperature={list(reading.sensors_c)},"
+            f"max={reading.maximum_c:.1f}C)"
+            for reading in readings
+        )
         print(
-            f"[INFERENCE] {json.dumps(payload, separators=(',', ':'))}",
+            "[MOTOR_TEMPERATURE_WARNING] "
+            f"ankle motor temperature exceeds "
+            f"{self._ankle_temperature_monitor.limit_c:.1f}C: {details}",
             flush=True,
         )
-        self._inference_frame_index += 1
 
     def _record_policy_input(
         self,

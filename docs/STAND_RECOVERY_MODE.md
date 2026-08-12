@@ -1,9 +1,9 @@
 # High Mode 4：鲁棒站立恢复测试
 
-High Mode 4 用于显式进入 `extreme_stand_recovery.onnx`。同一个模型用于初始化、
-安全回退、模式过渡以及导航缺失/超时，但 High 1 / Low 1 明确收到 `[0,0,0]` 时
-仍使用 `free_walk.onnx`。它不会替换新鲜速度跟踪、`accurate_arrival`、
-`standing_grasp` 或 `walk_with_object`。
+High Mode 4 是进入 `extreme_stand_recovery.onnx` 的唯一入口。初始化、安全回退、
+模式过渡和导航缺失/超时都使用 `free_walk.onnx + [0,0,0]`。恢复模型不会替换
+内部站立、速度跟踪、`accurate_arrival`、`standing_grasp` 或
+`walk_with_object`。
 
 只需要最短操作步骤时，直接阅读
 [`MODE4_QUICK_TEST.md`](MODE4_QUICK_TEST.md)。
@@ -17,17 +17,17 @@ High Mode 4 用于显式进入 `extreme_stand_recovery.onnx`。同一个模型�
 
 ```text
 high_mode = None
-model = extreme_stand_recovery.onnx
+model = free_walk.onnx
 command = [0,0,0]
 arm override = none
 ```
 
-50 Hz LowCmd 和推理线程仍持续运行。恢复模型已经生效，但业务状态仍是
-`high_mode=None`，不是自动发送了 high mode 4，也不会自动进入 NAV 2 或自行行走。
+50 Hz LowCmd 和推理线程仍持续运行。恢复模型尚未生效，业务状态仍是
+`high_mode=None`，不会自动进入 high mode 4、NAV 2 或自行行走。
 
 ## 内部站立使用位置
 
-以下情况统一选择 `stand_recovery + [0,0,0]`：
+以下情况统一选择 `free_walk + [0,0,0]`：
 
 - 初始化首帧后的健康站立；
 - 初始化完成后尚未收到 high mode；
@@ -36,8 +36,8 @@ arm override = none
 - high 1 从 low 1 切换到 low 2 的等待期；
 - high mode 或 low mode 非法后的安全回退。
 
-low 1→low 2 时不会把 high mode 改成 `4`。状态仍是 high 1/low 2，并标记
-`standing_transition=true`；等待结束后才选择 `accurate_arrival`。
+这些内部站立都不会把 high mode 改成 `4`。low 1→low 2 时状态仍是 high 1/low 2，
+并标记 `standing_transition=true`；等待结束后才选择 `accurate_arrival`。
 
 ## High Mode 4 行为
 
@@ -73,9 +73,9 @@ default angles / Kp / Kd = 通用组
 模型的 observation 布局、29DoF 顺序、默认角和通用 Kp/Kd 已逐项核对，与当前
 控制器合同一致。
 
-运行时每个恢复推理帧都会发布到 `/hecbot/locomotion/policy_input`，消息中
-`model=stand_recovery`，并携带推理前捕获的完整 `obs`。初始化、安全等待、内部
-过渡和显式 high mode 4 都可通过 `high_mode` 与 `standing_transition` 字段区分。
+运行时每个 mode 4 恢复推理帧都会发布到 `/hecbot/locomotion/policy_input`，消息中
+`model=stand_recovery`、`high_mode=4`，并携带推理前捕获的完整 `obs`。内部站立
+消息则是 `model=free_walk`。
 
 完整来源、checkpoint 哈希和 velocity tracking 模型版本见
 [`MODEL_PROVENANCE.md`](MODEL_PROVENANCE.md)。
@@ -96,7 +96,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 等待：
 
 ```text
-five ONNX models are ready; stand-recovery initialization is complete
+five ONNX models are ready; zero-command free-walk initialization is complete
 ```
 
 终端 2：
@@ -125,11 +125,14 @@ ros2 run locomotion_controller locomotion_controller_simulator
 模式切换为 high mode 4
 ```
 
-随后 `[INFERENCE]` 日志应包含：
+控制器已关闭逐帧 `[INFERENCE]` 输出。使用以下命令确认 mode 4：
 
-```json
-"model":"stand_recovery","high_mode":4,"navigation_input":{"model_input":[0.0,0.0,0.0]}
+```bash
+ros2 topic echo /hecbot/locomotion/policy_input std_msgs/msg/String
 ```
+
+消息中的 `model` 应为 `stand_recovery`、`high_mode` 应为 `4`，模型 command 应为
+`[0.0,0.0,0.0]`。
 
 固定的“前进三秒后停止”轨迹使用 `f`；`5/6` 仍是横移和转向轨迹。
 

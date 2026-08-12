@@ -81,15 +81,15 @@ wait "${fsm_pid}"
 3. 主动释放当前 Unitree MotionSwitcher 高层模式，进入低层调试模式；
 4. 用配置的 `startup_move_s` 从当前关节位置平滑移动到默认姿态；
 5. 启动唯一的 50 Hz `LowCmd`/推理线程；
-6. 运行 `stand_recovery + [0,0,0]` 并保持
+6. 运行 `free_walk + [0,0,0]` 并保持
    `initialization_stand_duration_s`；
 7. 发布 `/hecbot/locomotion/initialized = true`，同时开始以 50 Hz 发布
    `/hecbot/whole_body_state` 和每帧 ONNX 推理前输入
    `/hecbot/locomotion/policy_input`。
 
 初始化完成后，状态机不会自行选择 high mode，也不会自行行走；它保持
-`high_mode=None`，但持续运行 `stand_recovery + [0,0,0]` 等待应用层。恢复模型
-已经生效不等于业务状态自动进入 high mode 4。
+`high_mode=None`，但持续运行 `free_walk + [0,0,0]` 等待应用层。恢复模型只在
+应用层显式发送 high mode 4 后生效。
 
 整体录包脚本如需保留模型实际输入，应在业务动作前启动：
 

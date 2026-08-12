@@ -12,7 +12,8 @@
 - `accurate_arrival`：high 1 / low 2 精确到点；
 - `arm_stand`：high 2 原地双臂；
 - `arm_walk`：high 3 持物行走；
-- `stand_recovery`：初始化、安全等待、模式过渡、导航缺失/超时或 high 4。
+- `stand_recovery`：仅显式 high mode 4；其他站立帧记录为 `free_walk` 且 command
+  为 `[0,0,0]`。
 
 ## 2. JSON 合同
 
@@ -27,7 +28,7 @@
 | `monotonic_time_s` | 控制循环单调时钟时间 |
 | `model` | 本帧实际运行的模型名 |
 | `high_mode` / `low_mode` | 状态机业务模式；尚未收到 high mode 时可为 `null` |
-| `standing_transition` | 是否处于内部站立恢复过渡 |
+| `standing_transition` | 是否处于内部零指令站立过渡 |
 | `navigation_input` | 状态机选中值、语义和真正写入 observation 的三元组 |
 | `input` | ONNX 输入张量的完整描述和值 |
 

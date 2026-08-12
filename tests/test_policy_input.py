@@ -29,17 +29,19 @@ TEST_RUNTIME_ENVIRONMENT = {
 def packet_for(model: str, frame: int = 4) -> dict[str, object]:
     with patch.dict(os.environ, TEST_RUNTIME_ENVIRONMENT, clear=False):
         config = load_config(CONFIG_FILE, PROJECT_ROOT)
+    is_stand_recovery = model == "stand_recovery"
+    command = (0.0, 0.0, 0.0) if is_stand_recovery else (0.1, -0.2, 0.3)
     return make_policy_input_packet(
         frame=frame,
         wall_time="2026-08-12T12:00:00.000000+08:00",
         monotonic_time_s=123.5,
         model=model,
-        high_mode=None if model == "stand_recovery" else 1,
-        low_mode=None if model == "stand_recovery" else 1,
-        standing_transition=model == "stand_recovery",
+        high_mode=4 if is_stand_recovery else 1,
+        low_mode=None if is_stand_recovery else 1,
+        standing_transition=False,
         command_semantics="velocity",
-        selected_command=(0.1, -0.2, 0.3),
-        model_command=(0.1, -0.2, 0.3),
+        selected_command=command,
+        model_command=command,
         policy_joint_names=config.controller.policy_joint_names,
         observation=[index / 100.0 for index in range(96)],
     )

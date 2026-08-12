@@ -28,7 +28,7 @@ class StateMachineTest(unittest.TestCase):
 
     def test_waits_safely_before_first_mode(self):
         selection = self.machine.select(now=1.0)
-        self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
         self.assertEqual(selection.command, ZERO_COMMAND)
         self.assertIsNone(selection.high_mode)
 
@@ -38,7 +38,7 @@ class StateMachineTest(unittest.TestCase):
 
         standing = self.machine.select(now=1.5)
         self.assertTrue(standing.is_standing_transition)
-        self.assertEqual(standing.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(standing.model_name, MODEL_FREE_WALK)
         self.assertEqual(standing.command, ZERO_COMMAND)
 
         self.machine.set_navigation_command((0.3, 0.1, -0.2), now=2.0)
@@ -50,7 +50,7 @@ class StateMachineTest(unittest.TestCase):
         immediate_transition = self.machine.select(now=2.0)
         self.assertEqual(
             immediate_transition.model_name,
-            MODEL_STAND_RECOVERY,
+            MODEL_FREE_WALK,
         )
         self.assertTrue(immediate_transition.is_standing_transition)
 
@@ -58,7 +58,7 @@ class StateMachineTest(unittest.TestCase):
         self.assertTrue(low_mode_transition.is_standing_transition)
         self.assertEqual(
             low_mode_transition.model_name,
-            MODEL_STAND_RECOVERY,
+            MODEL_FREE_WALK,
         )
         self.assertEqual(
             low_mode_transition.low_mode,
@@ -87,7 +87,7 @@ class StateMachineTest(unittest.TestCase):
         )
         selection = self.machine.select(now=2.0)
         self.assertFalse(selection.is_standing_transition)
-        self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
 
     def test_navigation_sent_before_mode_uses_zero_until_new_parameters(self):
         self.machine.set_low_mode(LOW_MODE_VELOCITY)
@@ -95,7 +95,7 @@ class StateMachineTest(unittest.TestCase):
         self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=1.0)
 
         selection = self.machine.select(now=2.0)
-        self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
         self.assertEqual(selection.command, ZERO_COMMAND)
 
     def test_mode_one_low_one_fresh_zero_velocity_uses_free_walk(self):
@@ -109,19 +109,19 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(selection.command, ZERO_COMMAND)
         self.assertFalse(selection.is_standing_transition)
 
-    def test_mode_one_low_one_missing_or_stale_velocity_uses_recovery(self):
+    def test_mode_one_low_one_missing_or_stale_velocity_uses_zero_free_walk(self):
         self.machine.set_low_mode(LOW_MODE_VELOCITY, now=0.0)
         self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=0.0)
 
         missing = self.machine.select(now=1.0)
-        self.assertEqual(missing.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(missing.model_name, MODEL_FREE_WALK)
 
         self.machine.set_navigation_command(ZERO_COMMAND, now=1.1)
         fresh = self.machine.select(now=1.1)
         self.assertEqual(fresh.model_name, MODEL_FREE_WALK)
 
         stale = self.machine.select(now=1.351)
-        self.assertEqual(stale.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(stale.model_name, MODEL_FREE_WALK)
 
     def test_mode_two_stands_then_uses_arm_stand_model(self):
         arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)
@@ -222,7 +222,7 @@ class StateMachineTest(unittest.TestCase):
         self.machine.set_low_mode(LOW_MODE_VELOCITY, now=2.0)
         selection = self.machine.select(now=2.0)
         self.assertFalse(selection.is_standing_transition)
-        self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
         self.assertEqual(selection.command, ZERO_COMMAND)
 
     def test_target_pose_uses_latest_closed_loop_error(self):
@@ -239,14 +239,14 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(next_selection.model_name, MODEL_ACCURATE_ARRIVAL)
         self.assertEqual(next_selection.command, (0.664, -0.098, 0.175))
 
-    def test_invalid_modes_enter_stand_recovery_fallback(self):
+    def test_invalid_modes_enter_zero_free_walk_fallback(self):
         self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=1.0)
         self.assertEqual(self.machine.select(now=1.0).model_name, MODEL_ARM_WALK)
 
         with self.assertRaises(ValueError):
             self.machine.set_high_mode(9, now=2.0)
         high_fallback = self.machine.select(now=2.0)
-        self.assertEqual(high_fallback.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(high_fallback.model_name, MODEL_FREE_WALK)
         self.assertEqual(high_fallback.command, ZERO_COMMAND)
 
         self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=2.5)
@@ -255,7 +255,7 @@ class StateMachineTest(unittest.TestCase):
         arm_mode_fallback = self.machine.select(now=2.6)
         self.assertEqual(
             arm_mode_fallback.model_name,
-            MODEL_STAND_RECOVERY,
+            MODEL_FREE_WALK,
         )
         self.assertEqual(arm_mode_fallback.command, ZERO_COMMAND)
 
@@ -264,7 +264,7 @@ class StateMachineTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.machine.set_low_mode(9, now=4.0)
         low_fallback = self.machine.select(now=4.0)
-        self.assertEqual(low_fallback.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(low_fallback.model_name, MODEL_FREE_WALK)
         self.assertEqual(low_fallback.command, ZERO_COMMAND)
 
     def test_inputs_expire_at_their_configured_deadlines(self):
@@ -273,7 +273,7 @@ class StateMachineTest(unittest.TestCase):
         self.machine.set_navigation_command((0.4, 0.0, 0.0), now=1.0)
         self.assertEqual(self.machine.select(now=1.25).command, (0.4, 0.0, 0.0))
         expired_velocity = self.machine.select(now=1.251)
-        self.assertEqual(expired_velocity.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(expired_velocity.model_name, MODEL_FREE_WALK)
         self.assertEqual(expired_velocity.command, ZERO_COMMAND)
 
         arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)

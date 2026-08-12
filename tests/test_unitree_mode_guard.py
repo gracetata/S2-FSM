@@ -1,7 +1,6 @@
 from importlib.util import find_spec
 from collections import deque
 from datetime import datetime
-import json
 from pathlib import Path
 import os
 import sys
@@ -107,51 +106,6 @@ class UnitreeModeGuardTest(unittest.TestCase):
                 self.module.enter_debug_mode(1.0)
 
         motion_client.ReleaseMode.assert_not_called()
-
-    def test_inference_log_contains_effective_inputs_and_raw_output(self):
-        import numpy as np
-
-        from locomotion_controller.protocol import ArmCommand
-        from locomotion_controller.state_machine import ControlSelection
-
-        controller = self.module.UnitreeController.__new__(
-            self.module.UnitreeController
-        )
-        controller._inference_frame_index = 7
-        selection = ControlSelection(
-            model_name="arm_walk",
-            command_semantics="velocity",
-            command=(0.2, 0.0, -0.1),
-            arm_command=ArmCommand(
-                sequence=9,
-                positions=(0.1,) * 14,
-                velocities=(0.2,) * 14,
-                weight=0.8,
-            ),
-            high_mode=3,
-            low_mode=1,
-            is_standing_transition=False,
-        )
-        with patch("builtins.print") as print_mock:
-            controller._log_inference_frame(
-                selection,
-                np.asarray((0.15, 0.0, -0.05), dtype=np.float32),
-                np.arange(29, dtype=np.float32),
-            )
-
-        log_line = print_mock.call_args.args[0]
-        payload = json.loads(log_line.removeprefix("[INFERENCE] "))
-        self.assertEqual(payload["frame"], 7)
-        self.assertEqual(payload["model"], "arm_walk")
-        self.assertEqual(
-            payload["navigation_input"]["selected"],
-            [0.2, 0.0, -0.1],
-        )
-        self.assertEqual(payload["navigation_input"]["semantics"], "velocity")
-        self.assertEqual(payload["arm_output_override"]["sequence"], 9)
-        self.assertEqual(payload["arm_output_override"]["weight"], 0.8)
-        self.assertEqual(payload["model_output"], list(range(29)))
-        self.assertEqual(controller._inference_frame_index, 8)
 
     def test_policy_input_is_copied_immediately_before_inference(self):
         import numpy as np

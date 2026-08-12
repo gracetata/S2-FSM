@@ -89,7 +89,7 @@ class LocomotionControllerNode(Node):
         initialized.data = True
         self._initialized_publisher.publish(initialized)
         self.get_logger().info(
-            "five ONNX models are ready; stand-recovery initialization is complete"
+            "five ONNX models are ready; zero-command free-walk initialization is complete"
         )
 
     def _publish_control_telemetry(self) -> None:

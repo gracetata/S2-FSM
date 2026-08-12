@@ -37,6 +37,15 @@ class ProjectConfigTest(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertNotIn(value, text)
 
+    def test_control_loop_does_not_print_every_inference(self):
+        source = (
+            PROJECT_ROOT
+            / "src"
+            / "locomotion_controller"
+            / "unitree_controller.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("[INFERENCE]", source)
+
     def test_missing_nuc_environment_is_rejected_before_runtime_start(self):
         if find_spec("yaml") is None:
             self.skipTest("PyYAML is required")

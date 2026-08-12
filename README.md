@@ -3,7 +3,7 @@
 本项目是 Unitree G1 29DoF 的四模式有限状态机。入口为
 `scripts/locomotion_controller_node`。程序启动时一次性加载并预热五个 ONNX
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
-`stand_recovery + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
+`free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
 以 50 Hz 发布实测 29DoF 关节角。
 
 实机接管前，程序会读取当前 MotionSwitcher 状态。无论当前 Loco FSM ID 是什么，
@@ -16,7 +16,7 @@
 | high-level mode | low-level mode | 模型 | 有效上游输入 |
 | --- | --- | --- | --- |
 | `1` 导航 | `1` 新鲜速度（包括 `0,0,0`） | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
-| `1` 导航 | `1` 缺失/超时 | `extreme_stand_recovery.onnx` | command 固定 `[0,0,0]` |
+| `1` 导航 | `1` 缺失/超时 | `free_walk.onnx` | command 固定 `[0,0,0]` |
 | `1` 导航 | `2` 位置 | `accurate_arrival.onnx` | 导航三元组 `[dx_body, dy_body, dyaw]` |
 | `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂输出覆盖 |
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
@@ -29,22 +29,22 @@ mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 �
 的导航速度三元组，并把它写入 `arm_walk` 模型的 command observation；未收到
 low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
 
-`stand_recovery` 是统一站立策略：初始化等待、未收到 high mode、非法模式安全
-回退、mode 1/2 切入等待、high 1/low 1 的速度缺失或超时，以及 low 1→low 2 的
-切换等待都使用该模型。high 1/low 1 明确收到的新鲜 `[0,0,0]` 则继续使用
-`free_walk.onnx`。
+除显式 high mode 4 外，所有内部站立都统一使用 `free_walk + [0,0,0]`：包括初始化
+等待、未收到 high mode、非法模式安全回退、mode 1/2 切入等待、high 1/low 1 的
+速度缺失或超时，以及 low 1→low 2 的切换等待。`extreme_stand_recovery.onnx` 只在
+收到 high mode 4 时使用。
 
 双臂消息不是当前帧 ONNX 的独立输入。控制器先完成模型推理，再用外部 14DoF
 双臂位置和速度覆盖模型输出中的双臂关节。覆盖后实际执行的完整 action 会按策略
 合同写入下一帧 observation 的 `previous_action`。
 
-应用层切换到 mode 1 或 mode 2 时，控制器先选择 `stand_recovery`，向模型输入严格
+应用层切换到 mode 1 或 mode 2 时，控制器先选择 `free_walk`，向模型输入严格
 的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4
 不执行这一步。mode 4 不读取 low mode、导航或双臂命令，直接运行恢复模型自身的
 29DoF 输出。重复发布当前 high-level mode 不会重新开始站立计时。
 
 high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
-`stand_duration_s` 的 `stand_recovery` 推理。切换瞬间旧速度被清除；等待结束后
+`stand_duration_s` 的 `free_walk + [0,0,0]` 推理。切换瞬间旧速度被清除；等待结束后
 才进入 `accurate_arrival`。如果位置参数尚未到达，位置模型以 `[0,0,0]` 启动，
 不会把旧速度解释成位置误差。
 
@@ -373,7 +373,7 @@ source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
-看到 `stand-recovery initialization is complete` 后，在终端 2：
+看到 `zero-command free-walk initialization is complete` 后，在终端 2：
 
 ```bash
 cd <本机仓库目录>
@@ -440,19 +440,23 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 ### 终端调试日志
 
-控制进程在每次 50 Hz ONNX 推理后，向控制器终端输出一行 `[INFERENCE]` JSON：
+控制器不再打印每帧 `[INFERENCE]`，避免 50 Hz 日志持续刷屏。完整推理前输入仍按
+帧发布到 `/hecbot/locomotion/policy_input`；`accurate_arrival` 的详细输入、原始
+模型输出和最终控制量仍保存在 ToTarget JSONL 日志中。
 
-```text
-[INFERENCE] {"event":"policy_inference","frame":125,"model":"free_walk","high_mode":1,"low_mode":1,"standing_transition":false,"navigation_input":{"semantics":"velocity","selected":[0.25,0.0,0.0],"model_input":[0.25,0.0,0.0]},"arm_output_override":null,"model_output":[...29 values...]}
-```
+控制线程每帧读取 Unitree `rt/lowstate.motor_state[].temperature`，监测以下四个
+踝关节电机的两个温度通道：
 
-- `selected`：状态机选择的速度或骨盆坐标系位置误差。
-- `model_input`：实际写入 observation 的三元组；速度模式只做最大速度幅值保护，
-  不做插值或加速度限幅，位置模式不做变换。
-- `arm_output_override`：推理后用于覆盖双臂输出的位置、速度、权重和序号；它不是
-  当前帧独立模型输入，但覆盖后 action 会进入下一帧 `previous_action`。无有效
-  双臂消息时为 `null`。
-- `model_output`：ONNX 本帧返回的原始 29 维 action，记录发生在双臂覆盖和模型切换插值之前。
+- `left_ankle_pitch_joint`
+- `left_ankle_roll_joint`
+- `right_ankle_pitch_joint`
+- `right_ankle_roll_joint`
+
+当前默认 DDS 电机下标分别为 `4、5、10、11`；代码始终根据
+`motor_joint_names + motor_indices` 求实际下标，不依赖模型的 policy 顺序。
+任一温度通道严格超过 `70°C` 时，终端立即输出
+`[MOTOR_TEMPERATURE_WARNING]`，内容包含关节名、DDS 电机下标、两个温度值和最大值。
+持续过热期间最多每 5 秒提醒一次；温度恢复到不高于 70°C 后，再次过热会立即报警。
 
 每次启动控制器时，运行子进程的 stdout/stderr 还会完整保存到：
 
@@ -503,7 +507,7 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
    按 `k` 同时开启两类模拟参数。
 2. 按 `1`，再用 `W/S`、`A/D`、`Q/E` 自由调整三轴速度：验证 mode 1 low mode 1
    和速度模型；增量键会自动发送 low mode 1。
-3. 按 `p`：观察 low mode `1 → 2` 时先运行 `stand_recovery`，等待
+3. 按 `p`：观察 low mode `1 → 2` 时先运行 `free_walk + [0,0,0]`，等待
    `stand_duration_s` 后再进入位置模型；随后按 `7`、`8` 或 `9` 验证位置控制。
 4. 按 `2`，再按空格循环 `z/x/c`，或直接按 `z`、`x`、`c`、`b`：验证站立
    双臂模型和姿态直接切换。
@@ -550,18 +554,16 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 - 主配置和阻抗参数文件的每个字段都是必填项；未知字段、缺失字段、非法模式和
   非有限数值直接拒绝。
 - 初始化后但尚未收到 high-level mode 时，`high_mode=None`；控制器仅用
-  `stand_recovery + [0,0,0]` 保持站立。它使用与显式 mode 4 相同的模型，但
-  `high_mode` 仍是 `None`。
+  `free_walk + [0,0,0]` 保持站立，`high_mode` 仍是 `None`。
 - high mode 1 尚未收到 low-level mode 时，不选择默认 submode；保持
-  `stand_recovery + [0,0,0]`。
+  `free_walk + [0,0,0]`。
 - high 1/low 1 收到未超时的速度后始终使用 `free_walk`，包括明确的
-  `[0,0,0]`；尚未收到或超时时才使用 `stand_recovery + [0,0,0]`。
+  `[0,0,0]`；尚未收到或超时时也使用 `free_walk + [0,0,0]`。
 - high mode 3 只有 low mode 1 才读取导航速度；low mode 2、未收到 low mode 或
   导航超时时，`arm_walk` 的 command observation 为 `[0,0,0]`。
 - high mode 4 不读取 low mode、导航或双臂输入，直接使用
-  `stand_recovery + [0,0,0]`。同一模型也用于上述内部站立阶段，但不会把业务
-  high mode 数值改写为 `4`。
-- 非法 high/low mode 数值会被拒绝并立即落入 `stand_recovery + [0,0,0]`。合法的
+  `stand_recovery + [0,0,0]`；这是恢复模型唯一的使用入口。
+- 非法 high/low mode 数值会被拒绝并立即落入 `free_walk + [0,0,0]`。合法的
   high 3 + low 2 不属于非法模式，行为是 `arm_walk + [0,0,0]`。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3
   会作废进入该 mode 之前缓存的双臂参数；收到切换后的第一条有效双臂参数前，
