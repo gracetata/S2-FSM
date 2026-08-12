@@ -54,8 +54,8 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 - 切入 mode 2/3 后，在双臂操作层的新消息到达前保持切换前最后一帧双臂目标。
   双臂命令不作为当前帧独立模型输入，只在推理后覆盖输出；覆盖后实际 action 会
   进入下一帧 `previous_action`。
-- high 1/low 1 的速度为零、尚未收到或超时时使用恢复模型；收到非零新速度后
-  自动切回 `free_walk`。
+- high 1/low 1 收到新鲜速度后使用 `free_walk`，明确的 `[0,0,0]` 也不切换模型；
+  速度尚未收到或超时时才使用恢复模型。
 - high 1 从 low 1 切到 low 2 时，第一次识别切换就运行 `stand_recovery`；
   `stand_duration_s` 结束后才进入 `accurate_arrival`。
 - mode 4 不读取 low mode、导航或双臂输入；恢复模型的完整 29DoF 输出直接控制

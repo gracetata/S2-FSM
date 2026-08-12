@@ -13,7 +13,7 @@ export FSM_ROOT="$(pwd -P)"
 cp config/nuc.env.example config/nuc.env
 ```
 
-编辑 `config/nuc.env`，至少核对：
+编辑 `config/nuc.env`，逐项核对：
 
 - `LOCOMOTION_RUNTIME_PYTHON`：包含 `onnxruntime`、`cyclonedds` 和
   `unitree_sdk2py` 的 Python；
@@ -21,27 +21,23 @@ cp config/nuc.env.example config/nuc.env
 - `LOCOMOTION_NETWORK_INTERFACE`：本 NUC 连接机器人的网卡名称；
 - `LOCOMOTION_ROBOT_IP`：机器人地址；
 - `LOCOMOTION_LOG_ROOT`：本 NUC 可写的日志目录。
+- `LOCOMOTION_SOCKET_PATH`：本机 Unix socket 的绝对路径。
 
 该文件已被 `.gitignore` 排除，不会把一台 NUC 的绝对路径提交给其他机器。
 
-加载并检查本机参数：
+统一加载器会检查文件存在、六个变量非空、Python/环境目录有效、日志目录可写，并
+用选中的 Python 导入四个控制依赖。运行：
 
 ```bash
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 
-test -x "$LOCOMOTION_RUNTIME_PYTHON"
-test -d "$LOCOMOTION_RUNTIME_HOME"
-mkdir -p "$LOCOMOTION_LOG_ROOT"
 ip link show "$LOCOMOTION_NETWORK_INTERFACE"
 ping -c 1 "$LOCOMOTION_ROBOT_IP"
-
-PYTHONNOUSERSITE=1 "$LOCOMOTION_RUNTIME_PYTHON" -c \
-  "import numpy, onnxruntime, cyclonedds, unitree_sdk2py; print('runtime imports: OK')"
 ```
 
-任何一步失败都不要启动实机控制器。
+必须看到 `[S2-FSM] NUC environment ready`。任何一步失败都不要启动实机控制器。
+主 YAML 不再回退到系统 `python3`；即使调用者忽略加载器的失败，ROS 节点也会因
+缺少强制环境变量而在接管机器人前退出。
 
 ## 2. 编译
 
@@ -60,9 +56,7 @@ source "$FSM_ROOT/install/setup.bash"
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ```
@@ -85,16 +79,16 @@ ros2 launch locomotion_controller locomotion_controller.launch.py \
   config_file:="$FSM_ROOT/config/locomotion_controller.yaml"
 ```
 
-配置中的部署字符串支持 `${VAR}` 和 `${VAR:-default}`。模型和阻抗文件等相对路径
-始终相对于 ROS 安装包 share 目录解析；日志和 socket 可使用绝对路径，也可使用
-相对 share 目录的路径。正式多 NUC 部署推荐通过 `config/nuc.env` 给出每台机器的
-可写日志目录和运行环境。
+配置中的六个部署变量没有隐式默认值，全部来自 `config/nuc.env`。模型和阻抗文件
+等相对路径始终相对于 ROS 安装包 share 目录解析，因此项目目录可以不同；运行时
+Python、环境前缀、网卡、机器人 IP、日志和 socket 则由每台 NUC 独立指定。
 
 ## 5. 更新代码后
 
 ```bash
 cd "$FSM_ROOT"
 git pull --ff-only
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"
@@ -102,3 +96,11 @@ source "$FSM_ROOT/install/setup.bash"
 
 不要复制另一台 NUC 的 `config/nuc.env`；新机器从 example 建立并逐项核对。模型、
 ROS topic 和状态机行为在各 NUC 上相同，只有部署环境变量不同。
+
+## 6. 为什么 build 成功仍可能无法启动
+
+项目有两个 Python 进程：ROS 2 系统 Python 负责 topic 和 Unix socket；
+`LOCOMOTION_RUNTIME_PYTHON` 指定的 Conda Python 负责 ONNX Runtime、CycloneDDS、
+Unitree SDK2、五模型状态机和唯一的 50 Hz LowCmd。`colcon build` 只证明 ROS 包可
+安装，不证明控制环境包含 `unitree_sdk2py`。因此每次启动前都必须成功 source
+`load_nuc_env.sh`，不能直接依赖系统 `python3`。

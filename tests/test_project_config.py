@@ -9,6 +9,14 @@ from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_FILE = PROJECT_ROOT / "config" / "locomotion_controller.yaml"
+RUNTIME_ENVIRONMENT_VARIABLES = (
+    "LOCOMOTION_RUNTIME_PYTHON",
+    "LOCOMOTION_RUNTIME_HOME",
+    "LOCOMOTION_LOG_ROOT",
+    "LOCOMOTION_SOCKET_PATH",
+    "LOCOMOTION_NETWORK_INTERFACE",
+    "LOCOMOTION_ROBOT_IP",
+)
 
 
 class ProjectConfigTest(unittest.TestCase):
@@ -29,22 +37,22 @@ class ProjectConfigTest(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertNotIn(value, text)
 
-    def test_portable_default_paths_and_models_resolve(self):
+    def test_missing_nuc_environment_is_rejected_before_runtime_start(self):
         if find_spec("yaml") is None:
             self.skipTest("PyYAML is required")
         from locomotion_controller.config import load_config
 
-        config = load_config(CONFIG_FILE, PROJECT_ROOT)
-
-        self.assertTrue(config.runtime.python_executable.is_file())
-        self.assertTrue(config.runtime.cyclonedds_home.is_dir())
-        self.assertEqual(len(config.models), 5)
-        self.assertTrue(all(path.is_file() for path in config.models.values()))
-        self.assertEqual(
-            config.runtime.log_root,
-            PROJECT_ROOT / "log",
-        )
-        self.assertEqual(config.runtime.socket_path.parent, Path("/tmp"))
+        clean_environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in RUNTIME_ENVIRONMENT_VARIABLES
+        }
+        with patch.dict(os.environ, clean_environment, clear=True):
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires environment variable LOCOMOTION_RUNTIME_PYTHON",
+            ):
+                load_config(CONFIG_FILE, PROJECT_ROOT)
 
     def test_each_nuc_can_override_deployment_values_without_editing_yaml(self):
         if find_spec("yaml") is None:
@@ -57,7 +65,9 @@ class ProjectConfigTest(unittest.TestCase):
                 "LOCOMOTION_RUNTIME_PYTHON": sys.executable,
                 "LOCOMOTION_RUNTIME_HOME": sys.prefix,
                 "LOCOMOTION_LOG_ROOT": str(log_root),
-                "LOCOMOTION_SOCKET_PATH": "portable.sock",
+                "LOCOMOTION_SOCKET_PATH": str(
+                    Path(temporary_directory) / "portable.sock"
+                ),
                 "LOCOMOTION_NETWORK_INTERFACE": "robot0",
                 "LOCOMOTION_ROBOT_IP": "10.20.30.40",
             }
@@ -72,7 +82,7 @@ class ProjectConfigTest(unittest.TestCase):
         self.assertEqual(config.runtime.log_root, log_root)
         self.assertEqual(
             config.runtime.socket_path,
-            PROJECT_ROOT / "portable.sock",
+            Path(temporary_directory) / "portable.sock",
         )
         self.assertEqual(config.runtime.network_interface, "robot0")
         self.assertEqual(config.runtime.robot_ip, "10.20.30.40")

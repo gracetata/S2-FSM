@@ -1,8 +1,9 @@
 # High Mode 4：鲁棒站立恢复测试
 
-High Mode 4 用于显式进入 `extreme_stand_recovery.onnx`。同一个模型现在也替代
-所有原先用 `free_walk + [0,0,0]` 实现的内部站立功能，但不会替换非零速度行走、
-`accurate_arrival`、`standing_grasp` 或 `walk_with_object`。
+High Mode 4 用于显式进入 `extreme_stand_recovery.onnx`。同一个模型用于初始化、
+安全回退、模式过渡以及导航缺失/超时，但 High 1 / Low 1 明确收到 `[0,0,0]` 时
+仍使用 `free_walk.onnx`。它不会替换新鲜速度跟踪、`accurate_arrival`、
+`standing_grasp` 或 `walk_with_object`。
 
 只需要最短操作步骤时，直接阅读
 [`MODE4_QUICK_TEST.md`](MODE4_QUICK_TEST.md)。
@@ -31,7 +32,7 @@ arm override = none
 - 初始化首帧后的健康站立；
 - 初始化完成后尚未收到 high mode；
 - mode 1 或 mode 2 切入后的 `stand_duration_s`；
-- high 1/low 1 的速度为零、尚未收到或已经超时；
+- high 1/low 1 的速度尚未收到或已经超时；明确收到 `[0,0,0]` 不在此列；
 - high 1 从 low 1 切换到 low 2 的等待期；
 - high mode 或 low mode 非法后的安全回退。
 
@@ -87,7 +88,7 @@ default angles / Kp / Kd = 通用组
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
@@ -104,7 +105,7 @@ five ONNX models are ready; stand-recovery initialization is complete
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
 ```

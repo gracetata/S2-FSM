@@ -28,6 +28,7 @@ impedance_file: impedancepara_default.yaml
 ```bash
 source /opt/ros/jazzy/setup.bash
 cd "$FSM_ROOT"
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"
 ```

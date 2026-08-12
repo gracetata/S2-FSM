@@ -67,8 +67,8 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | --- | --- | --- | --- |
 | 未收到 high mode | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
 | mode 1/2 的站立过渡期 | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
-| high 1 + low 1 + 非零新鲜速度 | `free_walk` | 最新导航 `[vx,vy,yaw_rate]` | 模型输出 |
-| high 1 + low 1 + 零速/缺失/超时 | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
+| high 1 + low 1 + 新鲜速度（含零速） | `free_walk` | 最新导航 `[vx,vy,yaw_rate]` | 模型输出 |
+| high 1 + low 1 + 缺失/超时 | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
 | high 1 + low 2 | `accurate_arrival` | 最新导航 `[dx,dy,dyaw]` | 模型输出 |
 | high 1 + 未收到 low | `stand_recovery` | `[0,0,0]` velocity | 模型输出 |
 | high 2 | `arm_stand` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
@@ -87,7 +87,8 @@ high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最�
 旧速度参数，先执行 `stand_duration_s` 的 `stand_recovery + [0,0,0]`，再进入
 `accurate_arrival`。切换等待期间 high mode 保持 `1`、low mode 已是 `2`，不会
 伪造 high mode 4。从 low mode 2 切回 low mode 1 不增加等待，但同样先清除旧位置
-参数；新非零速度尚未到达时使用 `stand_recovery`。
+参数；新速度尚未到达时使用 `stand_recovery`，收到新鲜 `[0,0,0]` 后使用
+`free_walk`。
 
 high mode 1 的未匹配 low 分支选择 `stand_recovery + [0,0,0]`；high mode 3 的
 非 low-1 分支保持 `arm_walk + [0,0,0]`。非法 high/low mode 数值会返回拒绝结果，
@@ -111,7 +112,8 @@ high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 ### 3.4 超时
 
 - 导航输入超过 `navigation_timeout_s`：三元组替换为零，不改变 high/low mode；
-  high 1/low 1 的模型切换到 `stand_recovery`。
+  high 1/low 1 的模型切换到 `stand_recovery`。这是通信超时保护，与明确收到
+  `[0,0,0]` 后继续使用 `free_walk` 不同。
 - 双臂输入超过 `arm_timeout_s`：外部覆盖移除，14DoF 双臂目标保持上一控制帧的
   实际目标。
 - `rt/lowstate` 超过 `lowstate_runtime_timeout_s`：50 Hz 线程进入故障，停止推理并
@@ -251,7 +253,7 @@ joint-position observation 中。
 ## 6. 配置原则
 
 YAML 定义完整运行参数，launch 只暴露 `config_file`。仅 `runtime` 中明确写成
-`${VAR}` 或 `${VAR:-default}` 的部署值可由每台 NUC 的环境覆盖；状态机、模型路由、
+`${VAR}` 的六个强制部署值由每台 NUC 的环境提供；状态机、模型路由、
 关节合同和控制参数不会被环境变量隐式修改。加载器要求五个顶层段：
 
 - `topics`
@@ -266,8 +268,9 @@ default angles、Kp、Kd，共六个 29 维数组。mode 2 使用完整 standing
 mode 3 使用通用 default angles 和 standing-grasp Kp/Kd；其他模式和初始化使用
 通用组。增加新字段时必须同步修改加载器、本文档和测试；拼错字段不会被静默忽略。
 
-`runtime` 部署字符串支持 `${VAR}` 和 `${VAR:-default}`；相对路径按安装包 share
-目录解析，因而仓库和安装目录不绑定某台 NUC。每次运行的控制子进程 stdout/stderr
+`config/load_nuc_env.sh` 先验证本机配置和控制依赖，YAML 加载器再次拒绝缺失变量，
+不会回退到系统 `python3`。相对模型/阻抗路径按安装包 share 目录解析，因而仓库和
+安装目录不绑定某台 NUC。每次运行的控制子进程 stdout/stderr
 保存到 `runtime.log_root/runtime/`；每次进入 `accurate_arrival` 的 50 Hz 结构化
 复现日志保存到 `runtime.log_root/ToTarget/`。正式部署推荐由每台 NUC 的
 `config/nuc.env` 指定可写日志目录和运行环境。

@@ -219,7 +219,7 @@ class LocomotionStateMachine:
                     False,
                 )
             if low_mode == LOW_MODE_VELOCITY:
-                if fresh_navigation == ZERO_COMMAND:
+                if not is_navigation_fresh:
                     return self._stand_recovery_selection(
                         high_mode=high_mode,
                         low_mode=low_mode,

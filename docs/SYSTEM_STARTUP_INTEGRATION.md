@@ -16,7 +16,7 @@
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 
@@ -43,12 +43,10 @@ ros2 topic echo --once /hecbot/locomotion/initialized std_msgs/msg/Bool
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 fsm_root="${FSM_ROOT:?set FSM_ROOT to this NUC's repository directory}"
-set -a
-source "${fsm_root}/config/nuc.env"
-set +a
+source "${fsm_root}/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "${fsm_root}/install/setup.bash"
 
@@ -71,6 +69,8 @@ wait "${fsm_pid}"
 
 如果 90 秒内没有收到 `true`，或者 launch 进程提前退出，整体启动应判定失败，不要
 继续启动会向机器人发业务命令的模块。实际整机脚本还应把 launch 输出保存到统一日志。
+示例有意不使用 `set -u`，避免部分 ROS setup 脚本读取未定义的可选环境变量；
+`load_nuc_env.sh` 会自行严格检查本项目所需的六个变量。
 
 ## 4. 状态机启动时机器人的反应
 

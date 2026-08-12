@@ -9,7 +9,7 @@ Mode 4 独立运行鲁棒站立恢复模型，不需要 low mode、导航、双�
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 git pull
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"
@@ -22,7 +22,7 @@ source "$FSM_ROOT/install/setup.bash"
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
@@ -45,7 +45,7 @@ five ONNX models are ready; stand-recovery initialization is complete
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator

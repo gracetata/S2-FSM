@@ -98,16 +98,30 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
         self.assertEqual(selection.command, ZERO_COMMAND)
 
-    def test_mode_one_low_one_zero_velocity_uses_stand_recovery(self):
+    def test_mode_one_low_one_fresh_zero_velocity_uses_free_walk(self):
         self.machine.set_low_mode(LOW_MODE_VELOCITY, now=0.0)
         self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=0.0)
         self.machine.set_navigation_command(ZERO_COMMAND, now=1.0)
 
         selection = self.machine.select(now=1.0)
 
-        self.assertEqual(selection.model_name, MODEL_STAND_RECOVERY)
+        self.assertEqual(selection.model_name, MODEL_FREE_WALK)
         self.assertEqual(selection.command, ZERO_COMMAND)
         self.assertFalse(selection.is_standing_transition)
+
+    def test_mode_one_low_one_missing_or_stale_velocity_uses_recovery(self):
+        self.machine.set_low_mode(LOW_MODE_VELOCITY, now=0.0)
+        self.machine.set_high_mode(HIGH_MODE_NAVIGATION, now=0.0)
+
+        missing = self.machine.select(now=1.0)
+        self.assertEqual(missing.model_name, MODEL_STAND_RECOVERY)
+
+        self.machine.set_navigation_command(ZERO_COMMAND, now=1.1)
+        fresh = self.machine.select(now=1.1)
+        self.assertEqual(fresh.model_name, MODEL_FREE_WALK)
+
+        stale = self.machine.select(now=1.351)
+        self.assertEqual(stale.model_name, MODEL_STAND_RECOVERY)
 
     def test_mode_two_stands_then_uses_arm_stand_model(self):
         arm = ArmCommand(1, (0.1,) * 14, (0.0,) * 14, 1.0)

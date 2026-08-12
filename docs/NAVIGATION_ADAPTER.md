@@ -94,13 +94,13 @@ dyaw    = normalize(goal_yaw - pelvis_yaw)
 仍是 `1`、low mode 已是 `2`；等待期间导航仍应持续发布最新位置误差，结束后
 控制器直接用当时最新的一帧进入 `accurate_arrival`。
 
-high 1/low 1 只有非零且未超时的速度使用 `free_walk`。速度为 `[0,0,0]`、消息
-尚未到达或超过 `navigation_timeout_s` 时，状态机自动选择
-`stand_recovery + [0,0,0]`；新非零速度到达后自动切回 `free_walk`。
+high 1/low 1 收到未超时的速度就使用 `free_walk`，包括明确发布的 `[0,0,0]`。
+消息尚未到达或超过 `navigation_timeout_s` 时，状态机才自动选择
+`stand_recovery + [0,0,0]`；下一条新鲜速度到达后切回 `free_walk`。
 
-导航消息超时后，输入自动变为 `[0,0,0]`，但 low mode 不会自动改变。high 1/low 1
-会因此切到恢复模型；high 1/low 2 保持 `accurate_arrival`；high 3/low 1 保持
-`arm_walk`。
+导航消息超时后，输入自动变为 `[0,0,0]`，但 low mode 不会自动改变。由于超时
+不同于明确收到零命令，high 1/low 1 会切到恢复模型；high 1/low 2 保持
+`accurate_arrival`；high 3/low 1 保持 `arm_walk`。
 
 ## 数值示例
 

@@ -8,11 +8,11 @@
 
 五个模型使用同一个 topic。每条消息只对应一个实际推理帧，`model` 字段用于区分：
 
-- `free_walk`：high 1 / low 1 非零速度行走；
+- `free_walk`：high 1 / low 1 新鲜速度跟踪，包括 `[0,0,0]`；
 - `accurate_arrival`：high 1 / low 2 精确到点；
 - `arm_stand`：high 2 原地双臂；
 - `arm_walk`：high 3 持物行走；
-- `stand_recovery`：初始化、安全等待、模式过渡、零速站立或 high 4。
+- `stand_recovery`：初始化、安全等待、模式过渡、导航缺失/超时或 high 4。
 
 ## 2. JSON 合同
 
@@ -62,7 +62,7 @@ shape: [1, 96]
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 

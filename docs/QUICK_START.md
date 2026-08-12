@@ -8,7 +8,7 @@
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
@@ -50,7 +50,7 @@ ros2 topic echo --once /hecbot/locomotion/policy_input std_msgs/msg/String
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
@@ -80,7 +80,8 @@ ros2 run locomotion_controller locomotion_controller_simulator
 初始化后如果不按任何 high mode，状态机持续运行
 `stand_recovery + [0,0,0]`，但 `high_mode` 仍是 `None`。切入 mode 1/2 后先短暂
 运行同一恢复模型属于正常行为；尤其 low 1→low 2 会先恢复站立，等待结束后才进入
-位置模型。high 1/low 1 的速度为零或超时时也自动使用恢复模型。
+位置模型。high 1/low 1 明确收到零速度时仍运行 `free_walk`；只有速度尚未收到或
+超时时才自动使用恢复模型。
 
 ## 4. 完全使用键盘模拟输入（可选）
 

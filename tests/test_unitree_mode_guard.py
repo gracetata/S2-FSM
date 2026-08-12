@@ -3,6 +3,8 @@ from collections import deque
 from datetime import datetime
 import json
 from pathlib import Path
+import os
+import sys
 from threading import Lock
 from types import SimpleNamespace
 import unittest
@@ -158,10 +160,19 @@ class UnitreeModeGuardTest(unittest.TestCase):
         from locomotion_controller.state_machine import ControlSelection
 
         project_root = Path(__file__).resolve().parents[1]
-        config = load_config(
-            project_root / "config" / "locomotion_controller.yaml",
-            project_root,
-        )
+        environment = {
+            "LOCOMOTION_RUNTIME_PYTHON": sys.executable,
+            "LOCOMOTION_RUNTIME_HOME": sys.prefix,
+            "LOCOMOTION_LOG_ROOT": str(project_root / "log"),
+            "LOCOMOTION_SOCKET_PATH": "/tmp/locomotion-test.sock",
+            "LOCOMOTION_NETWORK_INTERFACE": "robot0",
+            "LOCOMOTION_ROBOT_IP": "192.0.2.1",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            config = load_config(
+                project_root / "config" / "locomotion_controller.yaml",
+                project_root,
+            )
         controller = self.module.UnitreeController.__new__(
             self.module.UnitreeController
         )

@@ -15,8 +15,8 @@
 
 | high-level mode | low-level mode | 模型 | 有效上游输入 |
 | --- | --- | --- | --- |
-| `1` 导航 | `1` 非零速度 | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
-| `1` 导航 | `1` 零速/缺失/超时 | `extreme_stand_recovery.onnx` | command 固定 `[0,0,0]` |
+| `1` 导航 | `1` 新鲜速度（包括 `0,0,0`） | `free_walk.onnx` | 导航三元组 `[vx, vy, yaw_rate]` |
+| `1` 导航 | `1` 缺失/超时 | `extreme_stand_recovery.onnx` | command 固定 `[0,0,0]` |
 | `1` 导航 | `2` 位置 | `accurate_arrival.onnx` | 导航三元组 `[dx_body, dy_body, dyaw]` |
 | `2` 双臂站立 | 不使用 | `standing_grasp.onnx` | 14DoF 双臂输出覆盖 |
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
@@ -30,8 +30,9 @@ mode 2 不读取导航输入，模型运动命令固定为 `[0,0,0]`。mode 3 �
 low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
 
 `stand_recovery` 是统一站立策略：初始化等待、未收到 high mode、非法模式安全
-回退、mode 1/2 切入等待、high 1/low 1 的零速或超时，以及 low 1→low 2 的切换
-等待都使用该模型，不再用 `free_walk + [0,0,0]` 实现站立。
+回退、mode 1/2 切入等待、high 1/low 1 的速度缺失或超时，以及 low 1→low 2 的
+切换等待都使用该模型。high 1/low 1 明确收到的新鲜 `[0,0,0]` 则继续使用
+`free_walk.onnx`。
 
 双臂消息不是当前帧 ONNX 的独立输入。控制器先完成模型推理，再用外部 14DoF
 双臂位置和速度覆盖模型输出中的双臂关节。覆盖后实际执行的完整 action 会按策略
@@ -59,6 +60,11 @@ high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
 目标环境为 Ubuntu 24.04、ROS 2 Jazzy 和 Python 3.12。ONNX Runtime、
 CycloneDDS 与 Unitree SDK2 安装在配置指定的 Conda 环境中。
 
+项目故意使用两个 Python 进程：ROS 2 系统 Python 负责 topic 和 Unix socket，
+`LOCOMOTION_RUNTIME_PYTHON` 指定的 Conda Python 负责 ONNX Runtime、
+CycloneDDS、Unitree SDK2、五模型状态机和唯一的 50 Hz `LowCmd`。因此
+`colcon build` 成功只表示 ROS 包构建成功，不代表控制运行环境完整。
+
 仓库可以放在任意目录，也可以部署到用户名、网卡名和运行环境路径不同的多台 NUC。
 每台 NUC 从 `config/nuc.env.example` 建立自己的 `config/nuc.env`；该本机文件不会
 提交到 Git。完整说明见[多 NUC 可移植部署](docs/NUC_DEPLOYMENT.md)。
@@ -70,9 +76,7 @@ export FSM_ROOT="$(pwd -P)"
 
 test -e config/nuc.env || cp config/nuc.env.example config/nuc.env
 # 首次创建后编辑 config/nuc.env 中的本机值
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 
 chmod +x scripts/locomotion_controller_*
 colcon build --symlink-install --packages-select locomotion_controller
@@ -82,7 +86,9 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 ```
 
 `<本机仓库目录>` 只是占位符，不是规定的绝对路径。`config/nuc.env` 中必须核对
-运行时 Python、运行环境前缀、机器人网卡、机器人 IP 和可写日志目录。
+运行时 Python、运行环境前缀、机器人网卡、机器人 IP、可写日志目录和 socket 路径。
+加载器会验证六个部署变量和四个控制依赖；缺少本机配置或依赖时立即失败。主 YAML
+不再回退到系统 `python3`，所以配置失败后不会继续到实机接管阶段。
 
 ### 修改代码后重新编译
 
@@ -94,9 +100,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"
@@ -111,7 +115,7 @@ source "$FSM_ROOT/install/setup.bash"
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source "$FSM_ROOT/install/setup.bash"
 ```
 
@@ -153,7 +157,7 @@ Loco FSM ID 为 `0`。
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 
 PYTHONPATH=src \
   "$LOCOMOTION_RUNTIME_PYTHON" \
@@ -363,7 +367,7 @@ ros2 run rqt_topic rqt_topic
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
@@ -374,7 +378,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
@@ -508,7 +512,8 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
    `b` 仅用于额外接口联调。
 6. 保持模拟参数发布开启或关闭均可，直接按 `4`：验证零 command 的
    `stand_recovery` 模型。
-7. 任意阶段按 `0` 验证导航零速回退，最后按 `Esc` 或 `Ctrl+C` 退出输入节点。
+7. High 1/Low 1 时按 `0`，确认 `free_walk` 继续以明确的 `[0,0,0]` 推理；最后按
+   `Esc` 或 `Ctrl+C` 退出输入节点。
 
 编辑预设 JSON 时字段不可缺失或增加；数组长度、有限数值、名称唯一性和持续时间
 都会在测试节点启动前严格校验。使用其他预设文件：
@@ -549,8 +554,8 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
   `high_mode` 仍是 `None`。
 - high mode 1 尚未收到 low-level mode 时，不选择默认 submode；保持
   `stand_recovery + [0,0,0]`。
-- high 1/low 1 只有非零且未超时的速度才使用 `free_walk`；速度为零、尚未收到或
-  超时时自动使用 `stand_recovery + [0,0,0]`。
+- high 1/low 1 收到未超时的速度后始终使用 `free_walk`，包括明确的
+  `[0,0,0]`；尚未收到或超时时才使用 `stand_recovery + [0,0,0]`。
 - high mode 3 只有 low mode 1 才读取导航速度；low mode 2、未收到 low mode 或
   导航超时时，`arm_walk` 的 command observation 为 `[0,0,0]`。
 - high mode 4 不读取 low mode、导航或双臂输入，直接使用

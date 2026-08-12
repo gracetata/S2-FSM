@@ -1,6 +1,8 @@
 from pathlib import Path
+import os
+import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from locomotion_controller.config import (
     POLICY_JOINT_COUNT,
@@ -12,11 +14,20 @@ from locomotion_controller.runtime_client import RuntimeClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_FILE = PROJECT_ROOT / "config" / "locomotion_controller.yaml"
+TEST_RUNTIME_ENVIRONMENT = {
+    "LOCOMOTION_RUNTIME_PYTHON": sys.executable,
+    "LOCOMOTION_RUNTIME_HOME": sys.prefix,
+    "LOCOMOTION_LOG_ROOT": str(PROJECT_ROOT / "log"),
+    "LOCOMOTION_SOCKET_PATH": "/tmp/locomotion-controller-test.sock",
+    "LOCOMOTION_NETWORK_INTERFACE": "robot0",
+    "LOCOMOTION_ROBOT_IP": "192.0.2.1",
+}
 
 
 class WholeBodyStateContractTest(unittest.TestCase):
     def test_config_uses_required_joint_order_and_impedance_file(self):
-        config = load_config(CONFIG_FILE, PROJECT_ROOT)
+        with patch.dict(os.environ, TEST_RUNTIME_ENVIRONMENT, clear=False):
+            config = load_config(CONFIG_FILE, PROJECT_ROOT)
 
         self.assertEqual(
             config.topics.whole_body_state,

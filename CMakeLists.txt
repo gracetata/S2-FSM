@@ -32,6 +32,7 @@ install(
 install(
   DIRECTORY config launch models
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "nuc.env" EXCLUDE
   PATTERN "__pycache__" EXCLUDE
   PATTERN "*.pyc" EXCLUDE
 )
