@@ -23,6 +23,8 @@ class SimulatorNodeTest(unittest.TestCase):
     def test_parameter_publishing_can_be_stopped_and_resumed(self):
         node = SimpleNamespace(
             _is_parameter_publishing_enabled=True,
+            _is_navigation_publishing_enabled=True,
+            _is_arm_publishing_enabled=True,
             _stop_navigation=MagicMock(),
             get_logger=MagicMock(return_value=MagicMock()),
         )
@@ -43,6 +45,8 @@ class SimulatorNodeTest(unittest.TestCase):
             _read_keys=MagicMock(return_value=False),
             _is_controller_initialized=True,
             _is_parameter_publishing_enabled=False,
+            _is_navigation_publishing_enabled=False,
+            _is_arm_publishing_enabled=False,
             _update_navigation=MagicMock(),
             _navigation_publisher=MagicMock(),
             _arm_publisher=MagicMock(),
@@ -62,6 +66,8 @@ class SimulatorNodeTest(unittest.TestCase):
             _high_mode_publisher=MagicMock(),
             _publish_mode=MagicMock(),
             _log_current_state=MagicMock(),
+            _print_velocity_state=MagicMock(),
+            _is_navigation_publishing_enabled=True,
             get_logger=MagicMock(return_value=MagicMock()),
         )
 
@@ -100,6 +106,36 @@ class SimulatorNodeTest(unittest.TestCase):
             node._low_mode_publisher,
             1,
         )
+        node._print_velocity_state.assert_called_once_with("W")
+
+    def test_velocity_terminal_line_states_if_command_is_actually_sent(self):
+        node = SimpleNamespace(
+            _navigation_command=(0.25, -0.1, 0.35),
+            _is_controller_initialized=True,
+            _is_navigation_publishing_enabled=False,
+        )
+        with unittest.mock.patch("builtins.print") as print_mock:
+            SimulatorNode._print_velocity_state(node, "W")
+
+        line = print_mock.call_args.args[0]
+        self.assertIn("[KEYBOARD_VELOCITY]", line)
+        self.assertIn("vx=0.25 m/s", line)
+        self.assertIn("vy=-0.10 m/s", line)
+        self.assertIn("yaw_rate=0.35 rad/s", line)
+        self.assertIn("NOT_PUBLISHED_PRESS_N", line)
+
+    def test_navigation_only_toggle_never_enables_arm_publishing(self):
+        node = SimpleNamespace(
+            _is_navigation_publishing_enabled=False,
+            _is_arm_publishing_enabled=False,
+            _is_parameter_publishing_enabled=False,
+            _stop_navigation=MagicMock(),
+        )
+
+        SimulatorNode._toggle_navigation_publishing(node)
+
+        self.assertTrue(node._is_navigation_publishing_enabled)
+        self.assertFalse(node._is_arm_publishing_enabled)
 
     def test_space_cycles_recommended_arm_poses_only_in_modes_two_three(self):
         poses = (object(), object(), object(), object())
@@ -129,6 +165,8 @@ class SimulatorNodeTest(unittest.TestCase):
             _arm_pose=SimpleNamespace(name="down"),
             _velocity_trajectory=None,
             _is_parameter_publishing_enabled=True,
+            _is_navigation_publishing_enabled=True,
+            _is_arm_publishing_enabled=True,
             get_logger=MagicMock(return_value=logger),
         )
 
@@ -137,6 +175,8 @@ class SimulatorNodeTest(unittest.TestCase):
         message = logger.info.call_args.args[0]
         self.assertIn("[KEYBOARD_STATE]", message)
         self.assertIn("publishing=on", message)
+        self.assertIn("navigation_publishing=on", message)
+        self.assertIn("arm_publishing=on", message)
         self.assertIn("high_mode=3", message)
         self.assertIn("low_mode=1", message)
         self.assertIn("navigation=[0.25, -0.10, 0.35]", message)

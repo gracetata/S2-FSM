@@ -275,11 +275,20 @@ class StateMachineTest(unittest.TestCase):
         self.assertIsNone(self.machine.select(now=2.201).arm_command)
         self.assertEqual(self.machine.select(now=2.251).command, ZERO_COMMAND)
 
-    def test_arm_sequence_must_increase(self):
+    def test_identical_arm_sequence_is_allowed_only_as_a_heartbeat(self):
+        self.machine.set_high_mode(HIGH_MODE_ARM_WALK, now=0.0)
         command = ArmCommand(2, (0.0,) * 14, (0.0,) * 14, 0.5)
         self.machine.set_arm_command(command, now=1.0)
-        with self.assertRaises(ValueError):
-            self.machine.set_arm_command(command, now=1.1)
+        self.machine.set_arm_command(command, now=1.1)
+        self.assertEqual(self.machine.select(now=1.25).arm_command, command)
+
+        changed = ArmCommand(2, (0.1,) * 14, (0.0,) * 14, 0.5)
+        with self.assertRaisesRegex(ValueError, "payload changed"):
+            self.machine.set_arm_command(changed, now=1.2)
+
+        older = ArmCommand(1, (0.0,) * 14, (0.0,) * 14, 0.5)
+        with self.assertRaisesRegex(ValueError, "must not decrease"):
+            self.machine.set_arm_command(older, now=1.2)
 
 
 if __name__ == "__main__":

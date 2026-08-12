@@ -10,6 +10,7 @@ from locomotion_controller.simulator_presets import (
     ZERO_COMMAND,
     adjust_keyboard_velocity,
     load_preset_catalog,
+    next_arm_sequence,
     next_arm_cycle_pose_index,
 )
 
@@ -27,6 +28,12 @@ ARM_WALK_POSE_FILE = (
 
 
 class SimulatorPresetsTest(unittest.TestCase):
+    def test_arm_sequence_uses_epoch_time_and_never_decreases_in_process(self):
+        self.assertEqual(next_arm_sequence(-1, 1_000), 1_000)
+        self.assertEqual(next_arm_sequence(1_000, 999), 1_001)
+        with self.assertRaises(ValueError):
+            next_arm_sequence(-2, 1_000)
+
     def test_project_presets_are_complete(self):
         catalog = load_preset_catalog(PRESET_FILE)
 

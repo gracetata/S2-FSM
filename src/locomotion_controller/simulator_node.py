@@ -7,7 +7,7 @@ from pathlib import Path
 import select
 import sys
 import termios
-from time import monotonic, monotonic_ns
+from time import monotonic, time_ns
 import tty
 
 from ament_index_python.packages import get_package_share_directory
@@ -28,6 +28,7 @@ from .simulator_presets import (
     VelocityTrajectory,
     adjust_keyboard_velocity,
     load_preset_catalog,
+    next_arm_sequence,
     next_arm_cycle_pose_index,
 )
 
@@ -97,6 +98,12 @@ class SimulatorNode(Node):
         self._is_parameter_publishing_enabled = (
             PARAMETER_PUBLISHING_ENABLED_AT_STARTUP
         )
+        self._is_navigation_publishing_enabled = (
+            PARAMETER_PUBLISHING_ENABLED_AT_STARTUP
+        )
+        self._is_arm_publishing_enabled = (
+            PARAMETER_PUBLISHING_ENABLED_AT_STARTUP
+        )
         self._high_mode: int | None = None
         self._low_mode: int | None = None
         self._navigation_command = ZERO_COMMAND
@@ -107,7 +114,7 @@ class SimulatorNode(Node):
         self._arm_pose_index = 0
         self._arm_positions = initial_pose.positions
         self._arm_velocities = (0.0,) * len(initial_pose.positions)
-        self._arm_sequence = monotonic_ns()
+        self._arm_sequence = -1
         if not sys.stdin.isatty():
             raise RuntimeError("simulator must run in an interactive terminal")
         self._terminal_settings = termios.tcgetattr(sys.stdin.fileno())
@@ -144,14 +151,28 @@ class SimulatorNode(Node):
             return
         if not self._is_controller_initialized:
             return
-        if not self._is_parameter_publishing_enabled:
+        if not (
+            self._is_navigation_publishing_enabled
+            or self._is_arm_publishing_enabled
+        ):
             return
         now = monotonic()
-        self._update_navigation(now)
-        navigation_message = Float32MultiArray()
-        navigation_message.data = list(self._navigation_command)
-        self._navigation_publisher.publish(navigation_message)
+        if self._is_navigation_publishing_enabled:
+            self._update_navigation(now)
+            navigation_message = Float32MultiArray()
+            navigation_message.data = list(self._navigation_command)
+            self._navigation_publisher.publish(navigation_message)
+        if (
+            self._is_arm_publishing_enabled
+            and self._high_mode in ARM_CYCLE_HIGH_MODES
+        ):
+            self._publish_arm_command()
 
+    def _publish_arm_command(self) -> None:
+        self._arm_sequence = next_arm_sequence(
+            self._arm_sequence,
+            time_ns(),
+        )
         arm_message = String()
         arm_message.data = json.dumps(
             {
@@ -164,7 +185,6 @@ class SimulatorNode(Node):
             separators=(",", ":"),
         )
         self._arm_publisher.publish(arm_message)
-        self._arm_sequence += 1
 
     def _read_keys(self) -> bool:
         while select.select([sys.stdin], [], [], 0.0)[0]:
@@ -185,6 +205,14 @@ class SimulatorNode(Node):
             self._toggle_parameter_publishing()
             self._log_current_state("parameter publishing toggled")
             return False
+        if key == "n":
+            self._toggle_navigation_publishing()
+            self._log_current_state("navigation publishing toggled")
+            return False
+        if key == "m":
+            self._toggle_arm_publishing()
+            self._log_current_state("arm publishing toggled")
+            return False
         if key in {"1", "2", "3", "4"}:
             self._high_mode = int(key)
             if self._is_controller_initialized:
@@ -201,6 +229,7 @@ class SimulatorNode(Node):
         if key == "0":
             self._stop_navigation()
             self._log_current_state("navigation zeroed")
+            self._print_velocity_state("0")
             return False
         if key in KEYBOARD_VELOCITY_DELTAS:
             self._adjust_velocity(key)
@@ -239,6 +268,7 @@ class SimulatorNode(Node):
             self._config.controller.max_velocity_command,
         )
         self._log_current_state(f"velocity key -> {key.upper()}")
+        self._print_velocity_state(key.upper())
 
     def _start_velocity_trajectory(
         self,
@@ -282,25 +312,59 @@ class SimulatorNode(Node):
             if trajectory is not None
             else "none"
         )
-        publishing = (
-            "on"
-            if getattr(self, "_is_parameter_publishing_enabled", False)
-            else "off"
+        navigation_publishing = getattr(
+            self,
+            "_is_navigation_publishing_enabled",
+            False,
         )
+        arm_publishing = getattr(
+            self,
+            "_is_arm_publishing_enabled",
+            False,
+        )
+        if navigation_publishing and arm_publishing:
+            publishing = "on"
+        elif navigation_publishing or arm_publishing:
+            publishing = "mixed"
+        else:
+            publishing = "off"
         self.get_logger().info(
             "[KEYBOARD_STATE] "
             f"event={event} | publishing={publishing} | "
+            f"navigation_publishing={'on' if navigation_publishing else 'off'} | "
+            f"arm_publishing={'on' if arm_publishing else 'off'} | "
             f"high_mode={high_mode} | low_mode={low_mode} | "
             f"navigation=[{command[0]:.2f}, {command[1]:.2f}, "
             f"{command[2]:.2f}] | arm_pose={arm_pose} | "
             f"trajectory={trajectory_name}"
         )
 
-    def _toggle_parameter_publishing(self) -> None:
-        self._is_parameter_publishing_enabled = (
-            not self._is_parameter_publishing_enabled
+    def _print_velocity_state(self, key: str) -> None:
+        command = self._navigation_command
+        if not self._is_controller_initialized:
+            delivery = "WAIT_INITIALIZED"
+        elif self._is_navigation_publishing_enabled:
+            delivery = "PUBLISHING_20HZ"
+        else:
+            delivery = "NOT_PUBLISHED_PRESS_N"
+        print(
+            "[KEYBOARD_VELOCITY] "
+            f"key={key} | vx={command[0]:.2f} m/s | "
+            f"vy={command[1]:.2f} m/s | "
+            f"yaw_rate={command[2]:.2f} rad/s | "
+            f"delivery={delivery}",
+            flush=True,
         )
-        if self._is_parameter_publishing_enabled:
+
+    def _toggle_parameter_publishing(self) -> None:
+        should_enable = not (
+            self._is_navigation_publishing_enabled
+            or self._is_arm_publishing_enabled
+        )
+        self._is_navigation_publishing_enabled = should_enable
+        self._is_arm_publishing_enabled = should_enable
+        self._is_parameter_publishing_enabled = should_enable
+        if should_enable:
             self.get_logger().info(
                 "navigation and arm parameter publishing resumed"
             )
@@ -309,6 +373,26 @@ class SimulatorNode(Node):
         self.get_logger().warning(
             "navigation and arm parameter publishing stopped; "
             "high/low mode keys remain active"
+        )
+
+    def _toggle_navigation_publishing(self) -> None:
+        self._is_navigation_publishing_enabled = (
+            not self._is_navigation_publishing_enabled
+        )
+        if not self._is_navigation_publishing_enabled:
+            self._stop_navigation()
+        self._is_parameter_publishing_enabled = (
+            self._is_navigation_publishing_enabled
+            and self._is_arm_publishing_enabled
+        )
+
+    def _toggle_arm_publishing(self) -> None:
+        self._is_arm_publishing_enabled = (
+            not self._is_arm_publishing_enabled
+        )
+        self._is_parameter_publishing_enabled = (
+            self._is_navigation_publishing_enabled
+            and self._is_arm_publishing_enabled
         )
 
     def _update_navigation(self, now: float) -> None:
@@ -372,6 +456,8 @@ class SimulatorNode(Node):
             "  0: cancel navigation and publish [0,0,0]",
             "  k: start/stop navigation and arm parameter publishing "
             "(starts stopped)",
+            "  n: start/stop navigation publishing only (use for W/S tests)",
+            "  m: start/stop arm publishing only (high modes 2/3 only)",
             *velocity_lines,
             *position_lines,
             *arm_lines,

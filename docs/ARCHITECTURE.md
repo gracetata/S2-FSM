@@ -195,7 +195,7 @@ JSON 合同：
 | 字段 | 类型 | 约束 |
 | --- | --- | --- |
 | `schema` | string | 必须是 `hecbot.upper_body_command.v1` |
-| `seq` | integer | 非负且相对上一条严格增加 |
+| `seq` | integer | 非负；新 payload 严格增加，相同 payload 可同序号心跳 |
 | `arm_q` | float[14] | 有限数，rad |
 | `arm_dq` | float[14] | 有限数，rad/s |
 | `weight` | float | `[0,1]` |
@@ -290,14 +290,14 @@ mode 3 使用通用 default angles 和 standing-grasp Kp/Kd；其他模式和初
 发布 `LowCmd`。它订阅 transient-local 的初始化 topic，只有控制器完成模型预热、
 首帧发送和初始化站立后才允许键盘选择结果发往状态机。
 
-测试节点默认关闭导航和双臂参数发布，只允许 high/low mode 键生效；按一次 `k`
-后才以 20 Hz 刷新导航三元组和严格双臂 JSON。high/low mode 只在键盘选择时发布；
+测试节点默认关闭导航和双臂参数发布，只允许 high/low mode 键生效；`n` 单独开关
+20 Hz 导航，`m` 单独开关双臂，`k` 兼容地同时开关两者。high/low mode 只在键盘选择时发布；
 速度轨迹结束后自动保持 `[0,0,0]`。双臂姿态使用
 `config/simulator_presets.json` 中的目标值直接切换，不生成中间姿态，发布速度为
 零。其中 `z/x/c` 与 `models/walk_with_object_arm_pose_set.json` 的三个姿态一致，
 是 high mode 3 的推荐持物行走预设；`b` 只是额外的接口联调姿态。进程内双臂序号
-从系统 monotonic nanosecond 起始，测试节点重启后仍高于同一次
-系统启动中的旧序号。按 `k` 可同时开始/停止导航和双臂参数的周期发布；停止不会
+使用 Unix epoch 纳秒并保证递增，以适配时钟同步的多 NUC 部署。按 `k` 可同时
+开始/停止导航和双臂参数的周期发布；停止不会
 影响 high/low mode 发布，因此默认即可只作为模式切换终端，与外部真实导航节点
 并行使用。
 

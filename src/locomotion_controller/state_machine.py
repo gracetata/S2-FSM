@@ -151,11 +151,21 @@ class LocomotionStateMachine:
     ) -> None:
         current_time = monotonic() if now is None else float(now)
         with self._lock:
-            if (
-                self._last_arm_sequence is not None
-                and command.sequence <= self._last_arm_sequence
-            ):
-                raise ValueError("arm command sequence must increase")
+            if self._last_arm_sequence is not None:
+                if command.sequence < self._last_arm_sequence:
+                    raise ValueError(
+                        "arm command sequence must not decrease: "
+                        f"received={command.sequence}, "
+                        f"last={self._last_arm_sequence}"
+                    )
+                if command.sequence == self._last_arm_sequence:
+                    if command != self._arm_command:
+                        raise ValueError(
+                            "arm command payload changed without increasing "
+                            f"sequence={command.sequence}"
+                        )
+                    self._arm_received_at = current_time
+                    return
             self._arm_command = command
             self._arm_received_at = current_time
             self._last_arm_sequence = command.sequence

@@ -66,6 +66,24 @@ def next_arm_cycle_pose_index(current_index: int) -> int:
     return (current_index + 1) % ARM_CYCLE_POSE_COUNT
 
 
+def next_arm_sequence(previous: int, epoch_time_ns: int) -> int:
+    """Return a cross-restart sequence while remaining monotonic in-process."""
+
+    if (
+        not isinstance(previous, int)
+        or isinstance(previous, bool)
+        or previous < -1
+    ):
+        raise ValueError("previous arm sequence must be -1 or non-negative")
+    if (
+        not isinstance(epoch_time_ns, int)
+        or isinstance(epoch_time_ns, bool)
+        or epoch_time_ns < 0
+    ):
+        raise ValueError("epoch arm sequence must be non-negative")
+    return max(epoch_time_ns, previous + 1)
+
+
 @dataclass(frozen=True)
 class ArmPose:
     name: str

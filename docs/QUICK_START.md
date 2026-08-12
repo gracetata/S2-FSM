@@ -84,11 +84,12 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 ## 4. 完全使用键盘模拟输入（可选）
 
-只有在真实导航层和双臂操作层都没有运行时才按一次 `k`，开启模拟参数发布。常用
-顺序：
+只有在真实导航层和双臂操作层都没有运行时才按一次 `k`，同时开启两类模拟参数。
+只测试键盘速度时推荐按 `n` 仅开启导航发布，避免与真实双臂层抢
+`/hecbot/upper_body_cmd`。按 `m` 可单独开关模拟双臂发布。常用顺序：
 
 ```text
-速度导航：k → 1 → W/S、A/D、Q/E（速度增量键自动选择 low mode 1）
+速度导航：n → 1 → W/S、A/D、Q/E（速度增量键自动选择 low mode 1）
 位置导航：p → 1 → 7/8/9
 站立双臂：2 → Space 循环 z/x/c，或直接按 z/x/c/b
 双臂行走：3 → Space 循环 z/x/c，并用 W/S、A/D、Q/E 调整速度
@@ -100,9 +101,14 @@ ros2 run locomotion_controller locomotion_controller_simulator
 `0.05 rad/s`；按 `0` 严格归零。固定测试轨迹仍可用 `f/5/6`。空格仅在 high
 mode 2/3 中生效，只循环三个推荐姿态，不包含额外姿态 `b`。
 
+每次速度键都会额外打印 `[KEYBOARD_VELOCITY]`，明确显示当前
+`vx/vy/yaw_rate`。`delivery=PUBLISHING_20HZ` 才表示正在发送；出现
+`NOT_PUBLISHED_PRESS_N` 时按 `n`。
+
 每次按键改变模式、速度或双臂姿态后，终端都会打印 `[KEYBOARD_STATE]`，其中包含
 当前 High Mode、Low Mode、`[vx,vy,yaw_rate]`、双臂姿态和参数发布开关。看到
-`publishing=off` 时，速度和双臂值尚未发布，需要先按 `k`。
+`navigation_publishing=off` 时速度尚未发布，需要按 `n`；
+`arm_publishing=off` 时模拟双臂姿态尚未发布，需要按 `m` 或在无真实上游时按 `k`。
 
 `z/x/c/b` 都能设置双臂姿态；其中 `z/x/c` 对应
 `models/walk_with_object_arm_pose_set.json` 的三个模型预设，是 high mode 3

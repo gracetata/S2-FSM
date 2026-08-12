@@ -38,7 +38,7 @@
 | 字段 | 类型 | 要求 |
 | --- | --- | --- |
 | `schema` | string | 必须严格等于 `hecbot.upper_body_command.v1` |
-| `seq` | integer | 非负；每条消息必须比上一条严格增大 |
+| `seq` | integer | 非负；新 payload 必须严格增大，相同 payload 可复用原序号作为心跳 |
 | `arm_q` | float[14] | 目标关节角，单位 rad；必须都是有限数值 |
 | `arm_dq` | float[14] | 目标关节速度，单位 rad/s；必须都是有限数值 |
 | `weight` | float | 必须位于 `[0,1]` |
@@ -115,7 +115,8 @@ mode 2 和 mode 3 使用完全相同的 standing-grasp 专用 Kp/Kd。双臂层�
 持物行走时，建议优先使用 `z`、`x`、`c` 对应的三个模型预设。`b` 来自
 `config/simulator_presets.json`，用于额外接口联调，不应被理解成
 `walk_with_object_arm_pose_set.json` 的第四个预设。High mode 2/3 中按空格会在
-`z/x/c` 三个推荐姿态之间循环，不会切到 `b`；模拟参数发布必须已经用 `k` 开启。
+`z/x/c` 三个推荐姿态之间循环，不会切到 `b`；模拟双臂发布必须已经用 `m` 开启，
+或在没有真实导航/双臂上游时用 `k` 同时开启。
 
 正式双臂层不接收键盘字符，而应读取上述 JSON 的 `left`、`right` 数组，按本文件
 第 3 节的顺序拼成 `arm_q` 后持续发布。切换姿态时仍须由双臂层生成平滑、限速且
@@ -125,22 +126,30 @@ mode 2 和 mode 3 使用完全相同的 standing-grasp 专用 Kp/Kd。双臂层�
 
 ## 5. `seq` 生成规则
 
-`seq` 在同一次状态机运行期间必须全局严格递增，包括 mode 2 和 mode 3 之间切换。
-双臂节点重启后也不能从零重新计数，否则状态机会拒绝新消息。
+`seq` 用于拒绝旧包和识别同一命令的心跳：
 
-推荐直接用单调时钟纳秒值：
+- payload 内容变化时，`seq` 必须严格增大；
+- 完全相同的 payload 可保持同一 `seq` 周期重发，状态机会刷新超时；
+- `seq` 回退，或保持同一 `seq` 却修改 payload，都会被拒绝；
+- mode 2/3 切换后需要新命令，因此应生成更大的新 `seq`。
+
+多 NUC 场景不要使用 `monotonic_ns()`：它只表示本机本次启动后的时间，跨 NUC、
+跨重启不可比较。推荐使用已通过 NTP/PTP 同步的 Unix epoch 纳秒：
 
 ```python
-from time import monotonic_ns
+from time import time_ns
 
-message["seq"] = monotonic_ns()
+message["seq"] = time_ns()
 ```
 
 同一进程内如果可能在一个纳秒内生成多条消息，应保存上一序号并使用：
 
 ```python
-sequence = max(monotonic_ns(), previous_sequence + 1)
+sequence = max(time_ns(), previous_sequence + 1)
 ```
+
+正式运行时 `/hecbot/upper_body_cmd` 只能有一个双臂命令发布者。键盘只测试导航时
+按 `n`，不要按 `k` 或 `m`，否则模拟器会与真实双臂层竞争序号。
 
 ## 6. 位置、速度和权重如何生效
 
@@ -199,8 +208,8 @@ ros2 topic pub --once /hecbot/upper_body_cmd std_msgs/msg/String \
   "{data: '{\"schema\":\"hecbot.upper_body_command.v1\",\"seq\":123456789,\"arm_q\":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],\"arm_dq\":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],\"weight\":1.0}'}"
 ```
 
-真实双臂节点必须为每条消息生成新序号，不能把上述固定 `seq` 示例直接改为
-`--rate 20`，否则第二条开始会因为序号没有增加而被拒绝。
+真实双臂节点发送新内容时必须生成新序号。固定 `seq` 示例只能在 payload 完全相同
+时作为心跳循环发布，不能在保持序号不变时修改姿态。
 
-正式双臂层接入后，键盘模拟器保持默认静默状态即可，不要按 `k` 开启其双臂参数
-发布。
+正式双臂层接入后，键盘模拟器的双臂发布保持关闭；若只用键盘调导航速度，按 `n`
+而不是 `k`。

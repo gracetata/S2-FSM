@@ -347,8 +347,8 @@ ros2 run rqt_topic rqt_topic
 ## 键盘整机测试
 
 测试节点会等待 `/hecbot/locomotion/initialized=true`。它默认不发布导航和双臂
-参数，相当于启动前已经按过 `k`，只用键盘发送 high/low mode；按 `k` 开启后才以
-20 Hz 持续发布导航和双臂输入，频率高于两类输入的超时要求。预设位于
+参数，相当于启动前已经按过 `k`，只用键盘发送 high/low mode。按 `n` 只开启
+20 Hz 导航发布，按 `m` 只开启双臂发布，按 `k` 兼容地同时开关两者。预设位于
 [`config/simulator_presets.json`](config/simulator_presets.json)，包含四个双臂
 姿态、三条速度轨迹和三个位置目标。键盘也支持三轴速度增减。按下双臂姿态键后，测试节点从下一次发布开始
 直接发送该目标，不生成中间姿态，也不做加速度限幅。
@@ -390,6 +390,8 @@ ros2 run locomotion_controller locomotion_controller_simulator
 | `p` | low mode 2，仅 high mode 1 的位置模式，同时清零当前导航输入 |
 | `0` | 取消轨迹；参数发布开启时持续发送 `[0,0,0]` |
 | `k` | 开始/停止导航与双臂参数发布；启动时默认停止，high/low mode 按键始终有效 |
+| `n` | 只开始/停止导航参数发布；使用 `W/S/A/D/Q/E` 时推荐该键 |
+| `m` | 只开始/停止双臂参数发布；仅 high mode 2/3 会真正发送 |
 | `W` / `S` | `vx` 每次增加 / 减少 `0.05 m/s`；自动选择 low mode 1 |
 | `A` / `D` | `vy` 每次增加 / 减少 `0.05 m/s`；自动选择 low mode 1 |
 | `Q` / `E` | `yaw_rate` 每次增加 / 减少 `0.05 rad/s`；自动选择 low mode 1 |
@@ -413,14 +415,21 @@ ros2 run locomotion_controller locomotion_controller_simulator
 键盘模拟器都会打印一行完整状态，例如：
 
 ```text
-[KEYBOARD_STATE] event=velocity key -> W | publishing=on | high_mode=3 | low_mode=1 | navigation=[0.25, -0.10, 0.35] | arm_pose=down | trajectory=none
+[KEYBOARD_STATE] event=velocity key -> W | publishing=mixed | navigation_publishing=on | arm_publishing=off | high_mode=3 | low_mode=1 | navigation=[0.25, -0.10, 0.35] | arm_pose=down | trajectory=none
 ```
 
-其中 `publishing=off` 表示当前值只保存在模拟器内部，不会发给状态机；此时先按
-`k` 开启参数发布。
+每次速度增量键和 `0` 还会直接在键盘终端打印：
 
-让真实导航或双臂节点独占发布参数时保持默认状态，不要按 `k`；`1/2/3/4`、`v/p`
-仍可切换 high/low mode。完全使用模拟输入测试时按一次 `k` 开启参数发布。再次按
+```text
+[KEYBOARD_VELOCITY] key=W | vx=0.25 m/s | vy=-0.10 m/s | yaw_rate=0.35 rad/s | delivery=PUBLISHING_20HZ
+```
+
+`delivery=NOT_PUBLISHED_PRESS_N` 表示速度只改在模拟器内部，应按 `n` 开启导航
+发布；`WAIT_INITIALIZED` 表示状态机尚未发布 initialized。
+
+让真实导航或双臂节点独占发布参数时保持对应模拟发布开关关闭；`1/2/3/4`、`v/p`
+仍可切换 high/low mode。只用键盘测试速度时按 `n`，不要开启模拟双臂发布；完全
+使用模拟输入测试时可按一次 `k` 同时开启。再次按
 `k` 会立即停止 `/hecbot/locomotion/navigation_command` 和
 `/hecbot/upper_body_cmd`，并取消内部速度轨迹。停止时不额外发布零值；最后一条
 模拟参数分别在 `navigation_timeout_s` 和 `arm_timeout_s` 到期后失效。
@@ -482,11 +491,12 @@ high-level 或 low-level mode 真正改变后，控制器终端会输出：
 
 重复发送相同 mode 不重复输出切换日志。按 `4` 直接发送 high mode 4；固定的
 “前进三秒后停止”轨迹使用 `f`。自由速度导航的完整操作顺序为
-`k → 1 → W/S、A/D、Q/E`，速度增量键会自动选择 low mode 1。
+`n → 1 → W/S、A/D、Q/E`，速度增量键会自动选择 low mode 1。
 
 推荐测试顺序：
 
-1. 确认真实导航和双臂节点均未运行，按 `k` 开启模拟参数发布。
+1. 只测试导航速度时按 `n` 开启导航发布；确认真实导航和双臂节点均未运行时，也可
+   按 `k` 同时开启两类模拟参数。
 2. 按 `1`，再用 `W/S`、`A/D`、`Q/E` 自由调整三轴速度：验证 mode 1 low mode 1
    和速度模型；增量键会自动发送 low mode 1。
 3. 按 `p`：观察 low mode `1 → 2` 时先运行 `stand_recovery`，等待
@@ -522,7 +532,8 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
 }
 ```
 
-- `seq`：非负且严格递增的整数。
+- `seq`：非负整数；新内容必须严格递增，同一 payload 可用相同序号重复发送作为
+  心跳。序号回退会被拒绝。
 - `arm_q`：左右双臂共 14 个目标关节角，单位 rad。
 - `arm_dq`：对应的 14 个目标关节速度，单位 rad/s。
 - `weight`：`[0, 1]`。`0` 保持切入该模型时的双臂基线，`1` 完全使用外部目标。
