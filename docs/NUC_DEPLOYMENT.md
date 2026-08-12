@@ -27,9 +27,7 @@ cp config/nuc.env.example config/nuc.env
 加载并检查本机参数：
 
 ```bash
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 
 test -x "$LOCOMOTION_RUNTIME_PYTHON"
 test -d "$LOCOMOTION_RUNTIME_HOME"
@@ -60,9 +58,7 @@ source "$FSM_ROOT/install/setup.bash"
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ```
@@ -92,9 +88,13 @@ ros2 launch locomotion_controller locomotion_controller.launch.py \
 
 ## 5. 更新代码后
 
+`config/nuc.env` 被 Git 忽略，`git pull` 不会覆盖本机值。加载器会检查文件存在、
+五个必填变量以及 Python/环境目录；检查失败时不会继续启动控制器。
+
 ```bash
 cd "$FSM_ROOT"
 git pull --ff-only
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"

@@ -29,22 +29,24 @@ class ProjectConfigTest(unittest.TestCase):
                 with self.subTest(path=path.name, value=value):
                     self.assertNotIn(value, text)
 
-    def test_portable_default_paths_and_models_resolve(self):
+    def test_missing_nuc_deployment_environment_is_rejected(self):
         if find_spec("yaml") is None:
             self.skipTest("PyYAML is required")
         from locomotion_controller.config import load_config
 
-        config = load_config(CONFIG_FILE, PROJECT_ROOT)
-
-        self.assertTrue(config.runtime.python_executable.is_file())
-        self.assertTrue(config.runtime.cyclonedds_home.is_dir())
-        self.assertEqual(len(config.models), 5)
-        self.assertTrue(all(path.is_file() for path in config.models.values()))
-        self.assertEqual(
-            config.runtime.log_root,
-            PROJECT_ROOT / "log",
-        )
-        self.assertEqual(config.runtime.socket_path.parent, Path("/tmp"))
+        environment = {
+            "LOCOMOTION_RUNTIME_PYTHON": "",
+            "LOCOMOTION_RUNTIME_HOME": "",
+            "LOCOMOTION_LOG_ROOT": "",
+            "LOCOMOTION_NETWORK_INTERFACE": "",
+            "LOCOMOTION_ROBOT_IP": "",
+        }
+        with patch.dict(os.environ, environment, clear=False):
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires environment variable LOCOMOTION_RUNTIME_PYTHON",
+            ):
+                load_config(CONFIG_FILE, PROJECT_ROOT)
 
     def test_each_nuc_can_override_deployment_values_without_editing_yaml(self):
         if find_spec("yaml") is None:
@@ -76,6 +78,16 @@ class ProjectConfigTest(unittest.TestCase):
         )
         self.assertEqual(config.runtime.network_interface, "robot0")
         self.assertEqual(config.runtime.robot_ip, "10.20.30.40")
+        self.assertEqual(len(config.models), 5)
+        self.assertTrue(all(path.is_file() for path in config.models.values()))
+
+    def test_checked_nuc_environment_loader_is_committed(self):
+        loader = PROJECT_ROOT / "config" / "load_nuc_env.sh"
+        self.assertTrue(loader.is_file())
+        self.assertIn(
+            "missing ${_nuc_env_file}",
+            loader.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

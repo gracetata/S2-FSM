@@ -70,9 +70,7 @@ export FSM_ROOT="$(pwd -P)"
 
 test -e config/nuc.env || cp config/nuc.env.example config/nuc.env
 # 首次创建后编辑 config/nuc.env 中的本机值
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 
 chmod +x scripts/locomotion_controller_*
 colcon build --symlink-install --packages-select locomotion_controller
@@ -94,9 +92,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a
-source "$FSM_ROOT/config/nuc.env"
-set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 
 colcon build --symlink-install --packages-select locomotion_controller
 source "$FSM_ROOT/install/setup.bash"
@@ -111,7 +107,7 @@ source "$FSM_ROOT/install/setup.bash"
 source /opt/ros/jazzy/setup.bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source "$FSM_ROOT/install/setup.bash"
 ```
 
@@ -153,7 +149,7 @@ Loco FSM ID 为 `0`。
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 
 PYTHONPATH=src \
   "$LOCOMOTION_RUNTIME_PYTHON" \
@@ -363,7 +359,7 @@ ros2 run rqt_topic rqt_topic
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 launch locomotion_controller locomotion_controller.launch.py
@@ -374,7 +370,7 @@ ros2 launch locomotion_controller locomotion_controller.launch.py
 ```bash
 cd <本机仓库目录>
 export FSM_ROOT="$(pwd -P)"
-set -a; source "$FSM_ROOT/config/nuc.env"; set +a
+source "$FSM_ROOT/config/load_nuc_env.sh"
 source /opt/ros/jazzy/setup.bash
 source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator
