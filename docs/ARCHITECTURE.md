@@ -231,6 +231,23 @@ joint-position observation 中。
 语义。ROS 进程通过现有本机 Unix socket 读取控制进程中的最新快照；返回维度错误或
 出现非有限数值时该帧不发布，并记录错误。
 
+### 5.7 推理前模型输入输出
+
+- Topic：`topics.policy_input`
+- 类型：`std_msgs/msg/String`
+- 产生位置：控制线程组装完 96 维 observation 后、调用 ONNX `infer()` 前
+- 内容：`hecbot.policy_input.v1` 自描述紧凑 JSON
+- 覆盖模型：五个预加载模型使用完全相同的消息合同
+
+控制线程先复制本帧 observation，再开始 ONNX 推理；因此 topic 数据不是根据输出
+或 LowCmd 反推。每包包含全局 `frame`、时间、实际模型、high/low mode、导航命令
+语义、policy 关节顺序、observation 切片定义和完整 96 个 float32 值。
+
+控制进程保存最近 256 帧不可变输入包。本地 IPC 每次最多顺序取 16 帧，首次连接只
+取当前最新帧，避免初始化期间的历史数据在 ROS 节点启动时突发发布。正常情况下 ROS
+定时器每 20 ms 取到一个新帧；短暂延迟时会按 `frame` 补发。缓存覆盖导致跳帧时 ROS
+节点会打印明确警告。详细合同见 `POLICY_INPUT_TOPIC.md`。
+
 ## 6. 配置原则
 
 YAML 是唯一运行参数来源，launch 只暴露 `config_file`。加载器要求五个顶层段：

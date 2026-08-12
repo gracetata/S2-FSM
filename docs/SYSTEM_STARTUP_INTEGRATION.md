@@ -77,11 +77,23 @@ wait "${fsm_pid}"
 6. 运行 `stand_recovery + [0,0,0]` 并保持
    `initialization_stand_duration_s`；
 7. 发布 `/hecbot/locomotion/initialized = true`，同时开始以 50 Hz 发布
-   `/hecbot/whole_body_state`。
+   `/hecbot/whole_body_state` 和每帧 ONNX 推理前输入
+   `/hecbot/locomotion/policy_input`。
 
 初始化完成后，状态机不会自行选择 high mode，也不会自行行走；它保持
 `high_mode=None`，但持续运行 `stand_recovery + [0,0,0]` 等待应用层。恢复模型
 已经生效不等于业务状态自动进入 high mode 4。
+
+整体录包脚本如需保留模型实际输入，应在业务动作前启动：
+
+```bash
+ros2 bag record -o policy_input_bag \
+  /hecbot/locomotion/policy_input \
+  /hecbot/whole_body_state
+```
+
+输入包中的 `frame` 用于检查连续性。若状态机终端出现
+`policy-input topic skipped runtime frames`，本次录包不是完整逐推理帧记录。
 
 整机需要使用 high mode 3 时，整体启动必须同时保证导航层和双臂层常驻：
 

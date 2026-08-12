@@ -112,6 +112,10 @@ ONNX 模型
 | `38:67` | 29DoF 关节速度 | policy |
 | `67:96` | 上一帧实际 action | policy |
 
+运行时可从 `/hecbot/locomotion/policy_input` 的
+`input.policy_joint_names` 和 `input.observation` 直接取得这一顺序与完整输入；不要
+用 motor 顺序解释 `9:38`、`38:67` 或 `67:96`。
+
 ## 4. 模型输出到 LowCmd 的转换
 
 模型输出的 29 维 action 是 policy 顺序。控制器在 policy 顺序下完成：

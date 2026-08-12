@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 import json
 from math import isfinite
@@ -18,9 +19,18 @@ from time import monotonic, sleep
 
 from .config import POLICY_JOINT_COUNT, PackageConfig
 from .protocol import ArmCommand
+from .policy_input import validate_policy_input_packet
 
 
 MAX_RESPONSE_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class ControlTelemetry:
+    positions: tuple[float, ...]
+    policy_inputs: tuple[dict[str, object], ...]
+    first_available_frame: int | None
+    latest_frame: int | None
 
 
 class RuntimeClient:
@@ -108,21 +118,53 @@ class RuntimeClient:
 
     def get_whole_body_positions(self) -> tuple[float, ...]:
         response = self._require_success("whole_body_state")
-        positions = response.get("positions")
-        if not isinstance(positions, list) or len(positions) != POLICY_JOINT_COUNT:
-            raise RuntimeError(
-                "runtime whole-body state must contain exactly 29 positions"
-            )
-        if not all(
-            isinstance(value, Real)
-            and not isinstance(value, bool)
-            and isfinite(float(value))
-            for value in positions
+        return _validated_positions(response.get("positions"))
+
+    def get_control_telemetry(self, after_frame: int) -> ControlTelemetry:
+        if (
+            not isinstance(after_frame, int)
+            or isinstance(after_frame, bool)
+            or after_frame < -1
         ):
-            raise RuntimeError(
-                "runtime whole-body state contains a non-finite position"
-            )
-        return tuple(float(value) for value in positions)
+            raise ValueError("after_frame must be -1 or a non-negative integer")
+        response = self._require_success(
+            "telemetry",
+            {"after_frame": after_frame},
+        )
+        positions = _validated_positions(response.get("positions"))
+        raw_packets = response.get("policy_inputs")
+        if not isinstance(raw_packets, list):
+            raise RuntimeError("runtime policy_inputs must be a list")
+        packets = tuple(
+            validate_policy_input_packet(item) for item in raw_packets
+        )
+        frames = [int(packet["frame"]) for packet in packets]
+        if frames != sorted(frames) or len(frames) != len(set(frames)):
+            raise RuntimeError("runtime policy input frames must be unique and ordered")
+        first_available = _optional_frame(
+            response.get("first_available_frame"),
+            "first_available_frame",
+        )
+        latest = _optional_frame(response.get("latest_frame"), "latest_frame")
+        if (first_available is None) != (latest is None):
+            raise RuntimeError("runtime policy input frame bounds are inconsistent")
+        if first_available is not None and first_available > latest:
+            raise RuntimeError("runtime policy input frame bounds are reversed")
+        if frames:
+            if first_available is None or latest is None:
+                raise RuntimeError(
+                    "runtime policy input packets require frame bounds"
+                )
+            if frames[0] < first_available or frames[-1] > latest:
+                raise RuntimeError(
+                    "runtime policy input frames exceed reported bounds"
+                )
+        return ControlTelemetry(
+            positions=positions,
+            policy_inputs=packets,
+            first_available_frame=first_available,
+            latest_frame=latest,
+        )
 
     def request(
         self,
@@ -257,6 +299,32 @@ class RuntimeClient:
                     last_error = str(error)
             sleep(0.05)
         raise TimeoutError(f"control runtime startup timed out: {last_error}")
+
+
+def _validated_positions(value: object) -> tuple[float, ...]:
+    positions = value
+    if not isinstance(positions, list) or len(positions) != POLICY_JOINT_COUNT:
+        raise RuntimeError(
+            "runtime whole-body state must contain exactly 29 positions"
+        )
+    if not all(
+        isinstance(item, Real)
+        and not isinstance(item, bool)
+        and isfinite(float(item))
+        for item in positions
+    ):
+        raise RuntimeError(
+            "runtime whole-body state contains a non-finite position"
+        )
+    return tuple(float(item) for item in positions)
+
+
+def _optional_frame(value: object, label: str) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise RuntimeError(f"runtime {label} must be null or non-negative")
+    return value
 
 
 def _prepend_path(value: str, existing: str) -> str:

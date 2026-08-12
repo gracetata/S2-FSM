@@ -29,6 +29,21 @@ ros2 topic echo --once /hecbot/locomotion/initialized std_msgs/msg/Bool
 
 初始化由 launch 自动完成，没有额外的初始化命令。
 
+如需录制所有模型真正送入 ONNX 前的 96 维输入，可在任意已加载 ROS 环境的新终端
+先运行下面命令，再开始切换模式：
+
+```bash
+ros2 bag record -o policy_input_bag \
+  /hecbot/locomotion/policy_input \
+  /hecbot/whole_body_state
+```
+
+录制终端最后按 `Ctrl+C` 保存包。仅查看一帧可用：
+
+```bash
+ros2 topic echo --once /hecbot/locomotion/policy_input std_msgs/msg/String
+```
+
 ## 2. 终端 2：启动键盘 high mode 模拟
 
 ```bash

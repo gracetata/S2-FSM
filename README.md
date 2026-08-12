@@ -180,6 +180,7 @@ PYTHONNOUSERSITE=1 \
 | --- | --- | --- | --- |
 | 输出 | `/hecbot/locomotion/initialized` | `std_msgs/msg/Bool` | 完成五模型预热、实机接管、首帧发送和 2 秒恢复策略站立后发布 `true` |
 | 输出 | `/hecbot/whole_body_state` | `std_msgs/msg/String` | 初始化后以 50 Hz 发布实测 29DoF 关节角；`data` 是恰好 29 个有限数值的紧凑 JSON 数组，单位 rad |
+| 输出 | `/hecbot/locomotion/policy_input` | `std_msgs/msg/String` | 每个控制帧发布实际 ONNX 推理前捕获的自描述 JSON 包；包含模型名、帧号和完整 96 维 `obs` |
 
 初始化 topic 使用 reliable + transient-local QoS，初始化完成后启动的订阅者也能收到
 最近一次 `true`。
@@ -217,6 +218,51 @@ PYTHONNOUSERSITE=1 \
 ros2 topic hz /hecbot/whole_body_state
 ros2 topic echo --once /hecbot/whole_body_state std_msgs/msg/String
 ```
+
+### 模型推理输入输出
+
+五个模型共用 `/hecbot/locomotion/policy_input`。控制线程在调用 ONNX
+`infer()` 的前一刻复制当帧完整输入，ROS 节点按 `frame` 顺序发布，不使用推理后的
+结果反推输入。消息类型为 `std_msgs/msg/String`，`data` 是严格 JSON 对象：
+
+```json
+{
+  "schema":"hecbot.policy_input.v1",
+  "stage":"pre_inference",
+  "frame":125,
+  "wall_time":"2026-08-12T12:00:00.000000+08:00",
+  "monotonic_time_s":123.5,
+  "model":"arm_walk",
+  "high_mode":3,
+  "low_mode":1,
+  "standing_transition":false,
+  "navigation_input":{"semantics":"velocity","selected":[0.2,0.0,0.0],"model_input":[0.2,0.0,0.0]},
+  "input":{"name":"obs","dtype":"float32","shape":[1,96],"layout":{"angular_velocity":[0,3],"gravity":[3,6],"command":[6,9],"joint_position":[9,38],"joint_velocity":[38,67],"previous_action":[67,96]},"policy_joint_names":["...共 29 个..."],"observation":["...共 96 个有限数值..."]}
+}
+```
+
+`model` 会实际标明 `free_walk`、`accurate_arrival`、`arm_stand`、`arm_walk`
+或 `stand_recovery`。双臂指令不是当前帧模型的独立输入，因此包中没有把双臂目标
+伪装成额外输入；但上一帧输出覆盖后真正执行的 action 会出现在下一帧
+`observation[67:96]`。
+
+检查 topic：
+
+```bash
+ros2 topic hz /hecbot/locomotion/policy_input
+ros2 topic echo --once /hecbot/locomotion/policy_input std_msgs/msg/String
+```
+
+录制为 rosbag：
+
+```bash
+ros2 bag record -o policy_input_bag \
+  /hecbot/locomotion/policy_input \
+  /hecbot/whole_body_state
+```
+
+完整字段合同和回放方法见
+[`docs/POLICY_INPUT_TOPIC.md`](docs/POLICY_INPUT_TOPIC.md)。
 
 ### 导航示例
 

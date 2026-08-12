@@ -2,6 +2,10 @@
 
 应用层只负责告诉状态机“当前要做什么”，不要向状态机发送底层关节命令。
 
+状态机另以 `/hecbot/locomotion/policy_input`（`std_msgs/msg/String`）输出五个
+模型每次 ONNX 推理前的完整 96 维输入包。应用层无需发布或回传该 topic；需要记录
+实验时可直接订阅或使用 `ros2 bag record`。
+
 ## 1. 启动握手
 
 订阅：

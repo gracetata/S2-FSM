@@ -72,6 +72,10 @@ default angles / Kp / Kd = 通用组
 模型的 observation 布局、29DoF 顺序、默认角和通用 Kp/Kd 已逐项核对，与当前
 控制器合同一致。
 
+运行时每个恢复推理帧都会发布到 `/hecbot/locomotion/policy_input`，消息中
+`model=stand_recovery`，并携带推理前捕获的完整 `obs`。初始化、安全等待、内部
+过渡和显式 high mode 4 都可通过 `high_mode` 与 `standing_transition` 字段区分。
+
 完整来源、checkpoint 哈希和 velocity tracking 模型版本见
 [`MODEL_PROVENANCE.md`](MODEL_PROVENANCE.md)。
 

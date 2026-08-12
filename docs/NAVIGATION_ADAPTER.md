@@ -14,6 +14,11 @@ high mode 3 只接受 low mode 1。导航速度会进入 `walk_with_object.onnx`
 observation；双臂消息不作为当前帧独立模型输入，只在推理后覆盖双臂输出，覆盖后
 实际 action 会进入下一帧 `previous_action`。
 
+导航层可订阅 `/hecbot/locomotion/policy_input`（`std_msgs/msg/String`）检查实际
+进入模型的值：`navigation_input.model_input` 与
+`input.observation[6:9]` 是本帧最终 command。该 topic 只用于观测/录包，导航层
+不应向其发布消息。
+
 位置控制只允许 high mode 1 + low mode 2。
 控制器不读取全局目标，不做坐标变换，不累计位移，也不保存第一次误差作为固定目标。
 导航必须根据最新定位结果持续重算并发布误差。

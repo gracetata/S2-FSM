@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import deque
+from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
 import json
@@ -25,6 +27,7 @@ from unitree_sdk2py.utils.crc import CRC
 from .config import ControllerConfig, POLICY_JOINT_COUNT
 from .imu import get_gravity_orientation, transform_torso_imu
 from .policy import OBSERVATION_SIZE, PolicyBank
+from .policy_input import make_policy_input_packet
 from .state_machine import (
     MODEL_ACCURATE_ARRIVAL,
     MODEL_ARM_STAND,
@@ -60,6 +63,7 @@ OBS_JOINT_POSITION = slice(9, 38)
 OBS_JOINT_VELOCITY = slice(38, 67)
 OBS_PREVIOUS_ACTION = slice(67, 96)
 MOTION_SERVICE_RETRY_CODES = {3102, 3104}
+POLICY_INPUT_HISTORY_SIZE = 256
 
 
 class UnitreeController:
@@ -82,6 +86,10 @@ class UnitreeController:
         self._control_error: str | None = None
         self._has_taken_control = False
         self._command_lock = Lock()
+        self._policy_input_lock = Lock()
+        self._policy_input_history: deque[dict[str, object]] = deque(
+            maxlen=POLICY_INPUT_HISTORY_SIZE
+        )
         self._crc = CRC()
         self._totarget_logger = ToTargetLogger(totarget_log_directory)
         self._totarget_metadata = {
@@ -188,6 +196,32 @@ class UnitreeController:
             float(low_state.motor_state[index].q)
             for index in self._config.motor_indices
         )
+
+    def policy_inputs_after(
+        self,
+        after_frame: int,
+        max_count: int,
+    ) -> tuple[list[dict[str, object]], int | None, int | None]:
+        """Return ordered pre-inference packets without blocking control work."""
+
+        if after_frame < -1:
+            raise ValueError("after_frame must be -1 or a non-negative integer")
+        if max_count <= 0:
+            raise ValueError("max_count must be positive")
+        with self._policy_input_lock:
+            if not self._policy_input_history:
+                return [], None, None
+            first_available = int(self._policy_input_history[0]["frame"])
+            latest = int(self._policy_input_history[-1]["frame"])
+            if after_frame == -1:
+                selected = [self._policy_input_history[-1]]
+            else:
+                selected = [
+                    packet
+                    for packet in self._policy_input_history
+                    if int(packet["frame"]) > after_frame
+                ][:max_count]
+            return deepcopy(selected), first_available, latest
 
     def take_control_and_start(self) -> None:
         enter_debug_mode(self._config.motion_release_timeout_s)
@@ -373,6 +407,12 @@ class UnitreeController:
         )
         self._observation[OBS_PREVIOUS_ACTION] = self._previous_action
 
+        self._record_policy_input(
+            selection,
+            command,
+            frame_wall_time,
+            now,
+        )
         inference_started_at = monotonic()
         action = self._policies.get_policy(selection.model_name).infer(
             self._observation
@@ -509,6 +549,30 @@ class UnitreeController:
             flush=True,
         )
         self._inference_frame_index += 1
+
+    def _record_policy_input(
+        self,
+        selection: ControlSelection,
+        model_command: np.ndarray,
+        frame_wall_time: datetime,
+        monotonic_time_s: float,
+    ) -> None:
+        packet = make_policy_input_packet(
+            frame=self._inference_frame_index,
+            wall_time=frame_wall_time.isoformat(timespec="microseconds"),
+            monotonic_time_s=monotonic_time_s,
+            model=selection.model_name,
+            high_mode=selection.high_mode,
+            low_mode=selection.low_mode,
+            standing_transition=selection.is_standing_transition,
+            command_semantics=selection.command_semantics,
+            selected_command=selection.command,
+            model_command=model_command.tolist(),
+            policy_joint_names=self._config.policy_joint_names,
+            observation=self._observation.tolist(),
+        )
+        with self._policy_input_lock:
+            self._policy_input_history.append(packet)
 
     def _begin_model_switch(self, model_name: str, now: float) -> None:
         self._active_model_name = model_name

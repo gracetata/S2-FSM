@@ -1,5 +1,9 @@
 from importlib.util import find_spec
+from collections import deque
+from datetime import datetime
 import json
+from pathlib import Path
+from threading import Lock
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -146,6 +150,53 @@ class UnitreeModeGuardTest(unittest.TestCase):
         self.assertEqual(payload["arm_output_override"]["weight"], 0.8)
         self.assertEqual(payload["model_output"], list(range(29)))
         self.assertEqual(controller._inference_frame_index, 8)
+
+    def test_policy_input_is_copied_immediately_before_inference(self):
+        import numpy as np
+
+        from locomotion_controller.config import load_config
+        from locomotion_controller.state_machine import ControlSelection
+
+        project_root = Path(__file__).resolve().parents[1]
+        config = load_config(
+            project_root / "config" / "locomotion_controller.yaml",
+            project_root,
+        )
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._config = config.controller
+        controller._inference_frame_index = 21
+        controller._observation = np.arange(96, dtype=np.float32)
+        controller._policy_input_lock = Lock()
+        controller._policy_input_history = deque(maxlen=256)
+        selection = ControlSelection(
+            model_name="arm_walk",
+            command_semantics="velocity",
+            command=(0.2, 0.0, -0.1),
+            arm_command=None,
+            high_mode=3,
+            low_mode=1,
+            is_standing_transition=False,
+        )
+
+        controller._record_policy_input(
+            selection,
+            np.asarray((0.2, 0.0, -0.1), dtype=np.float32),
+            datetime.fromisoformat("2026-08-12T12:00:00+08:00"),
+            99.0,
+        )
+        controller._observation.fill(-1.0)
+        packets, first, latest = controller.policy_inputs_after(-1, 16)
+
+        self.assertEqual(first, 21)
+        self.assertEqual(latest, 21)
+        self.assertEqual(packets[0]["frame"], 21)
+        self.assertEqual(packets[0]["model"], "arm_walk")
+        self.assertEqual(
+            packets[0]["input"]["observation"],
+            list(range(96)),
+        )
 
     def test_velocity_command_is_applied_without_a_ramp(self):
         import numpy as np

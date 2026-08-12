@@ -19,6 +19,7 @@ from .unitree_controller import UnitreeController
 
 IPC_PROTOCOL = "locomotion_controller.ipc.v1"
 MAX_MESSAGE_BYTES = 64 * 1024
+MAX_POLICY_INPUT_BATCH = 16
 
 
 class ControlRuntime:
@@ -63,6 +64,25 @@ class ControlRuntime:
             response["positions"] = list(
                 self._controller.whole_body_positions()
             )
+            return response
+        if operation == "telemetry":
+            _require_request_keys(request, {"operation", "after_frame"})
+            after_frame = _integer(request["after_frame"], "after_frame")
+            if after_frame < -1:
+                raise ValueError("after_frame must be -1 or non-negative")
+            packets, first_available, latest = (
+                self._controller.policy_inputs_after(
+                    after_frame,
+                    MAX_POLICY_INPUT_BATCH,
+                )
+            )
+            response = self._response(True, "control telemetry is ready")
+            response["positions"] = list(
+                self._controller.whole_body_positions()
+            )
+            response["policy_inputs"] = packets
+            response["first_available_frame"] = first_available
+            response["latest_frame"] = latest
             return response
         if operation == "high_mode":
             _require_request_keys(request, {"operation", "value"})

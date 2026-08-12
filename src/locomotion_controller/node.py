@@ -41,6 +41,11 @@ class LocomotionControllerNode(Node):
             self._config.topics.whole_body_state,
             self._config.topics.queue_depth,
         )
+        self._policy_input_publisher = self.create_publisher(
+            String,
+            self._config.topics.policy_input,
+            self._config.topics.queue_depth,
+        )
         self._runtime = RuntimeClient(self._config)
         try:
             self._runtime.start()
@@ -73,10 +78,11 @@ class LocomotionControllerNode(Node):
             self._receive_arm,
             queue_depth,
         )
-        self._whole_body_state_error_logged = False
-        self._whole_body_state_timer = self.create_timer(
+        self._telemetry_error_logged = False
+        self._last_policy_input_frame = -1
+        self._telemetry_timer = self.create_timer(
             self._config.controller.control_dt,
-            self._publish_whole_body_state,
+            self._publish_control_telemetry,
         )
 
         initialized = Bool()
@@ -86,17 +92,37 @@ class LocomotionControllerNode(Node):
             "five ONNX models are ready; stand-recovery initialization is complete"
         )
 
-    def _publish_whole_body_state(self) -> None:
+    def _publish_control_telemetry(self) -> None:
         try:
-            positions = self._runtime.get_whole_body_positions()
+            telemetry = self._runtime.get_control_telemetry(
+                self._last_policy_input_frame
+            )
             message = String()
             message.data = json.dumps(
-                positions,
+                telemetry.positions,
                 separators=(",", ":"),
                 allow_nan=False,
             )
             self._whole_body_state_publisher.publish(message)
-            self._whole_body_state_error_logged = False
+            for packet in telemetry.policy_inputs:
+                frame = int(packet["frame"])
+                if (
+                    self._last_policy_input_frame >= 0
+                    and frame > self._last_policy_input_frame + 1
+                ):
+                    self.get_logger().warning(
+                        "policy-input topic skipped runtime frames "
+                        f"{self._last_policy_input_frame + 1}..{frame - 1}"
+                    )
+                input_message = String()
+                input_message.data = json.dumps(
+                    packet,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+                self._policy_input_publisher.publish(input_message)
+                self._last_policy_input_frame = frame
+            self._telemetry_error_logged = False
         except (
             ConnectionError,
             OSError,
@@ -104,11 +130,11 @@ class LocomotionControllerNode(Node):
             TypeError,
             ValueError,
         ) as error:
-            if not self._whole_body_state_error_logged:
+            if not self._telemetry_error_logged:
                 self.get_logger().error(
-                    f"whole-body state publication failed: {error}"
+                    f"control telemetry publication failed: {error}"
                 )
-                self._whole_body_state_error_logged = True
+                self._telemetry_error_logged = True
 
     def destroy_node(self) -> bool:
         try:

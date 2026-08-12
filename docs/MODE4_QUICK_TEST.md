@@ -61,8 +61,17 @@ ros2 run locomotion_controller locomotion_controller_simulator
 "model":"stand_recovery"
 ```
 
+也可直接检查推理前的完整 96 维输入：
+
+```bash
+ros2 topic echo /hecbot/locomotion/policy_input std_msgs/msg/String
+```
+
+按 `4` 后消息中的 `model` 应为 `stand_recovery`、`high_mode` 应为 `4`，
+`input.observation` 必须恰好包含 96 个数值。
+
 从可控的小扰动开始测试恢复效果。数字 `4` 已专用于 mode 4；速度导航的前进轨迹
-改用 `w`。
+改用 `f`。
 
 ## 4. 退出
 

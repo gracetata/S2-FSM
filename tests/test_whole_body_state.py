@@ -23,6 +23,10 @@ class WholeBodyStateContractTest(unittest.TestCase):
             "/hecbot/whole_body_state",
         )
         self.assertEqual(
+            config.topics.policy_input,
+            "/hecbot/locomotion/policy_input",
+        )
+        self.assertEqual(
             config.controller.motor_joint_names,
             WHOLE_BODY_JOINT_NAMES,
         )

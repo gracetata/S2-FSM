@@ -10,6 +10,11 @@ locomotion_controller:
     # 50 Hz after initialization.
     whole_body_state: /hecbot/whole_body_state
 
+    # Debug/recording output: std_msgs/msg/String containing a self-describing
+    # JSON packet with the exact 96 float32 values captured immediately before
+    # every ONNX inference. All five models use this one topic.
+    policy_input: /hecbot/locomotion/policy_input
+
     # Application layer: std_msgs/msg/UInt8, legal values 1, 2, 3, 4.
     high_level_mode: /hecbot/locomotion/high_level_mode
 

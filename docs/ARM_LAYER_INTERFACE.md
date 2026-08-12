@@ -155,6 +155,10 @@ sequence = max(monotonic_ns(), previous_sequence + 1)
 策略原有的历史 action 输入，并不是把 `arm_q/arm_dq` 作为当前帧额外输入。
 机器人实际运动后产生的实测关节角也属于正常状态反馈。
 
+可订阅 `/hecbot/locomotion/policy_input`（`std_msgs/msg/String`）核对这一合同：
+双臂目标不会作为当前帧额外输入字段出现；覆盖后的实际 action 会出现在下一帧
+`input.observation[67:96]`。完整 JSON 合同见 `POLICY_INPUT_TOPIC.md`。
+
 - `weight=1.0`：完全使用外部 `arm_q` 和 `arm_dq`。
 - `weight=0.0`：保持切入当前双臂模型时的双臂位置基线，外部速度为零。
 - `0<weight<1`：目标位置在切模基线和 `arm_q` 之间线性融合；`arm_dq` 同样乘以

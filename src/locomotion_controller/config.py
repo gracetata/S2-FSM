@@ -58,6 +58,7 @@ WHOLE_BODY_JOINT_NAMES = (
 class TopicConfig:
     initialized: str
     whole_body_state: str
+    policy_input: str
     high_level_mode: str
     low_level_mode: str
     navigation_command: str
@@ -175,6 +176,7 @@ def _load_topics(settings: dict[str, Any]) -> TopicConfig:
     expected = {
         "initialized",
         "whole_body_state",
+        "policy_input",
         "high_level_mode",
         "low_level_mode",
         "navigation_command",
