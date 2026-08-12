@@ -185,10 +185,12 @@ ros2 run kairui_totarget kairui_navigation_shadow_probe \
 ssh -t nuc-005
 export ROS_DOMAIN_ID=22
 cd "$HOME/wenduo/S2-FSM"
+export FSM_ROOT="$(pwd -P)"
+source "$FSM_ROOT/config/load_nuc_env.sh" || exit 1
 source /opt/ros/jazzy/setup.bash
-source install/setup.bash
+source "$FSM_ROOT/install/setup.bash"
 ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
-  -p preset_file:="$(pwd -P)/config/simulator_presets.json"
+  -p preset_file:="$FSM_ROOT/config/simulator_presets.json"
 ```
 
 看到 `controller initialized; keyboard commands are now active` 后，按下一节的完整
