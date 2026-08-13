@@ -213,10 +213,13 @@ class SimulatorNode(Node):
             self._toggle_arm_publishing()
             self._log_current_state("arm publishing toggled")
             return False
-        if key in {"1", "2", "3", "4", "5"}:
+        if key in {"1", "2", "3", "4", "5", "6"}:
             self._high_mode = int(key)
             if self._high_mode == 5:
                 self._disable_navigation_publishing()
+            if self._high_mode == 6:
+                self._disable_navigation_publishing()
+                self._disable_arm_publishing()
             if self._is_controller_initialized:
                 self._publish_mode(self._high_mode_publisher, self._high_mode)
             self._log_current_state(f"high mode -> {self._high_mode}")
@@ -411,6 +414,10 @@ class SimulatorNode(Node):
             and self._is_arm_publishing_enabled
         )
 
+    def _disable_arm_publishing(self) -> None:
+        self._is_arm_publishing_enabled = False
+        self._is_parameter_publishing_enabled = False
+
     def _update_navigation(self, now: float) -> None:
         trajectory = self._velocity_trajectory
         if trajectory is None:
@@ -465,6 +472,7 @@ class SimulatorNode(Node):
             "  3: high mode 3 (velocity requires low mode 1 / key v)",
             "  4: high mode 4 (stand recovery; zero command; direct switch)",
             "  5: high mode 5 (free walk [0,0,0] stand; stop keyboard navigation)",
+            "  6: high mode 6 (suspend S2-FSM LowCmd for external control)",
             "  v: low mode 1 (velocity for high modes 1 and 3)",
             "  p: low mode 2 and stop keyboard navigation (ToTarget handoff)",
             "  W/S: increase/decrease vx by 0.05 m/s",

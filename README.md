@@ -1,6 +1,6 @@
 # 人形机器人运动控制器
 
-本项目是 Unitree G1 29DoF 的五模式有限状态机。入口为
+本项目是 Unitree G1 29DoF 的六模式有限状态机。入口为
 `scripts/locomotion_controller_node`。程序启动时一次性加载并预热五个 ONNX
 模型，然后启动唯一的 50 Hz 推理/`LowCmd` 控制线程。首帧发送后，控制器继续以
 `free_walk + [0,0,0]` 站立 2 秒；全程健康后节点才发布初始化完成消息，并开始
@@ -22,6 +22,7 @@
 | `3` 双臂行走 | `1` 速度 | `walk_with_object.onnx` | 导航 `[vx,vy,yaw_rate]` + 14DoF 双臂输出覆盖 |
 | `4` 鲁棒站立恢复 | 不使用 | `extreme_stand_recovery.onnx` | 无；command 固定 `[0,0,0]` |
 | `5` 零速站立 | 不使用 | `free_walk.onnx` | 无；command 固定 `[0,0,0]` |
+| `6` 外部控制接管 | 不使用 | 不推理 | S2-FSM 停止发布 `LowCmd` |
 
 当前 velocity tracking、accurate arrival、ArmHack walk 和 extreme stand 模型的来源、checkpoint 与 ONNX 哈希
 见 [`docs/MODEL_PROVENANCE.md`](docs/MODEL_PROVENANCE.md)。
@@ -41,10 +42,16 @@ low mode 1、速度尚未到达或速度超时时使用 `[0,0,0]`。
 合同写入下一帧 observation 的 `previous_action`。
 
 应用层切换到 mode 1 或 mode 2 时，控制器先选择 `free_walk`，向模型输入严格
-的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4/5
+的零 command 并保持配置的 `stand_duration_s`，然后进入目标模式。切换到 mode 3/4/5/6
 不执行这一步。mode 4 不读取 low mode、导航或双臂命令，直接运行恢复模型自身的
 29DoF 输出；mode 5 同样忽略这些输入，但运行 `free_walk + [0,0,0]`。
 重复发布当前 high-level mode 不会重新开始站立计时。
+
+high mode 6 用于把真机低层控制权交给外部控制器。进入后 S2-FSM 保留 LowState
+读取、温度监测和 ROS 状态服务，但停止 ONNX 推理且不再调用 `LowCmd` 写入。必须先在
+S2-FSM 终端看到 `[EXTERNAL_CONTROL] ... LowCmd publishing suspended`，再启动外部
+Sonic 控制脚本。退出 mode 6 前必须先停止外部脚本；S2-FSM 随后从当前实测 29DoF
+姿态出发，使用 `model_switch_blend_s` 对包括双臂在内的全身目标平滑接回。
 
 high mode 1 内从 low mode 1 切换到 low mode 2 时也执行同一段
 `stand_duration_s` 的 `free_walk + [0,0,0]` 推理。切换瞬间旧速度被清除；等待结束后
@@ -65,7 +72,7 @@ CycloneDDS 与 Unitree SDK2 安装在配置指定的 Conda 环境中。
 
 项目故意使用两个 Python 进程：ROS 2 系统 Python 负责 topic 和 Unix socket，
 `LOCOMOTION_RUNTIME_PYTHON` 指定的 Conda Python 负责 ONNX Runtime、
-CycloneDDS、Unitree SDK2、五模型状态机和唯一的 50 Hz `LowCmd`。因此
+CycloneDDS、Unitree SDK2、六模式状态机和正常模式下唯一的 50 Hz `LowCmd`。因此
 `colcon build` 成功只表示 ROS 包构建成功，不代表控制运行环境完整。
 
 仓库可以放在任意目录，也可以部署到用户名、网卡名和运行环境路径不同的多台 NUC。
@@ -392,7 +399,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 
 | 按键 | 动作 |
 | --- | --- |
-| `1` / `2` / `3` / `4` / `5` | high-level mode 1 / 2 / 3 / 4 / 5；`5` 为 `free_walk + [0,0,0]` 站立并关闭键盘导航发布 |
+| `1` / `2` / `3` / `4` / `5` / `6` | high-level mode 1–6；`5` 为零速站立；`6` 停止 S2-FSM `LowCmd` 并关闭键盘导航/双臂发布 |
 | `v` | low mode 1，high mode 1/3 的速度模式，同时清零当前导航输入 |
 | `p` | 一键切 low mode 2，同时停止键盘导航发布，把话题所有权交给 ToTarget |
 | `0` | 取消轨迹；参数发布开启时持续发送 `[0,0,0]` |
@@ -434,7 +441,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 `delivery=NOT_PUBLISHED_PRESS_N` 表示速度只改在模拟器内部，应按 `n` 开启导航
 发布；`WAIT_INITIALIZED` 表示状态机尚未发布 initialized。
 
-让真实导航或双臂节点独占发布参数时保持对应模拟发布开关关闭；`1/2/3/4/5`、`v/p`
+让真实导航或双臂节点独占发布参数时保持对应模拟发布开关关闭；`1/2/3/4/5/6`、`v/p`
 仍可切换 high/low mode。只用键盘测试速度时按 `n`，不要开启模拟双臂发布；完全
 使用模拟输入测试时可按一次 `k` 同时开启。再次按
 `k` 会立即停止 `/hecbot/locomotion/navigation_command` 和
@@ -569,17 +576,20 @@ ros2 run locomotion_controller locomotion_controller_simulator --ros-args \
   `stand_recovery + [0,0,0]`；这是恢复模型唯一的使用入口。
 - high mode 5 不读取 low mode、导航或双臂输入，直接使用
   `free_walk + [0,0,0]`，用于显式普通站立和多轮导航之间的隔离。
+- high mode 6 不执行模型推理、不写入 `LowCmd`，供外部低层控制器独占真机控制；
+  外部控制器停止后才能切回其他 high mode。
 - 非法 high/low mode 数值会被拒绝并立即落入 `free_walk + [0,0,0]`。合法的
   high 3 + low 2 不属于非法模式，行为是 `arm_walk + [0,0,0]`。
 - 模式与参数可以不同步到达。导航模式发生变化时先使用 `[0,0,0]`；mode 2/3
   会作废进入该 mode 之前缓存的双臂参数；收到切换后的第一条有效双臂参数前，
   每一帧都保持模式切换前最后一帧的双臂目标。
 - 导航或双臂消息超时后不复用陈旧输入。导航变为零，双臂保持上一控制帧的实际目标。
-- 双臂位置/速度和导航速度都不做时间插值或加速度限幅。模型切换动作融合只作用于
-  腿和腰；模型 `previous_action` 在切换时清零。mode 2/3 的外部双臂命令不写入
+- 双臂位置/速度和导航速度都不做独立的时间插值或加速度限幅。模型切换动作融合作用于
+  包括双臂在内的全部 29DoF；模型 `previous_action` 在切换时清零。mode 2/3 的外部双臂命令不写入
   当前帧 command observation，只在推理后覆盖输出；覆盖后实际执行的 action 会
   写入下一帧 `previous_action`。
-- 控制线程异常或程序退出时发送 `Kp=0, Kd=8` 阻尼命令。
+- 正常控制模式下，控制线程异常或程序退出时发送 `Kp=0, Kd=8` 阻尼命令；high mode 6
+  外部接管期间不会发送阻尼或任何其他 `LowCmd`，避免覆盖外部控制器。
 
 完整运行时结构、时序和配置说明见
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。

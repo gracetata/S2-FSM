@@ -76,11 +76,13 @@ CycloneDDS 和 Unitree SDK2 运行在现有 Conda Python。业务状态、输入
 | high 3 + 其他/未收到 low | `arm_walk` | `[0,0,0]` velocity | 推理后外部 14DoF 覆盖 |
 | high 4 | `stand_recovery` | `[0,0,0]` velocity | 模型完整 29DoF 输出 |
 | high 5 | `free_walk` | `[0,0,0]` velocity | 模型输出 |
+| high 6 | 不推理 | 不使用 | S2-FSM 不写入 `LowCmd`，外部控制器接管 |
 
 mode 1 与 mode 2 的 high-level 请求都会开始一次明确的站立事务。站立期间
 模型固定为 `free_walk`，command 三元组严格为零。
 `stand_duration_s` 到期后，50 Hz 线程自然选择目标模型。
-high mode 4/5 与 mode 3 一样直接切入，不执行这段站立等待。
+high mode 4/5/6 与 mode 3 一样直接切入，不执行这段站立等待；mode 6 直接暂停
+S2-FSM 的推理和 `LowCmd` 写入。
 
 high mode 1 解释 low mode 1/2；high mode 3 只解释 low mode 1，并把最新速度命令
 路由到 `arm_walk`。high mode 3 收到 low mode 2 时仍保持 `arm_walk`，但 command
@@ -96,6 +98,8 @@ high mode 1 的未匹配 low 分支选择 `free_walk + [0,0,0]`；high mode 3 �
 high mode 4 忽略 low mode、导航缓存和双臂缓存，固定选择
 `stand_recovery + [0,0,0]`。
 high mode 5 同样忽略这些输入，但固定选择 `free_walk + [0,0,0]`。
+high mode 6 同样忽略这些输入，但不选择模型、不推理且不发布控制帧。切回其他模式时，
+控制器从最新 LowState 的实测 29DoF 姿态开始全身模型切换融合。
 
 ### 3.3 参数不同步时的确定值
 
@@ -141,13 +145,13 @@ high mode 5 同样忽略这些输入，但固定选择 `free_walk + [0,0,0]`。
 6. 调用当前预热 ONNX Session，得到 29 维 action。
 7. ONNX 推理完成后，mode 2/3 才按 `weight` 将外部双臂位置与切入基线融合，
    覆盖模型输出 action 中的 14 个双臂分量；外部双臂速度同样乘以 `weight`。
-   外部双臂消息不是当前帧模型的独立输入。双臂分量绕过模型切换融合，在收到消息
-   的当前帧直接生效。
-8. 仅对模型切换前后的腿、腰目标关节位置做线性融合。
+   外部双臂消息不是当前帧模型的独立输入。
+8. 对模型切换前后的全部 29DoF 目标关节位置做线性融合，包括外部覆盖后的双臂目标。
 9. 用覆盖后最终目标反算实际执行 action，保存为下一帧 observation 的
    `previous_action`；因此该切片包含双臂覆盖后的实际 action。
 10. 转为 Unitree motor order，写入位置、速度、Kp、Kd 和 CRC。
-11. 发布唯一一帧 `rt/lowcmd`，等待下一个单调时钟 deadline。
+11. 正常模式发布唯一一帧 `rt/lowcmd`，等待下一个单调时钟 deadline；high mode 6
+    在第 2 步后直接返回，不执行第 3–11 步。
 
 mode 2 使用 `impedancepara.yaml` 中的 `*_standing_grasp` 默认角和 Kp/Kd。
 mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
@@ -160,7 +164,7 @@ mode 3 使用通用默认角，同时使用与 mode 2 完全相同的
 
 - Topic：`topics.high_level_mode`
 - 类型：`std_msgs/msg/UInt8`
-- 合法值：`1`、`2`、`3`、`4`、`5`
+- 合法值：`1`、`2`、`3`、`4`、`5`、`6`
 - 发布者：应用层
 
 只有值变化才触发切换。重复值用于上游重发时不会重置站立计时。

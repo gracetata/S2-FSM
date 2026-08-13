@@ -78,6 +78,9 @@ ros2 run locomotion_controller locomotion_controller_simulator
   mode、导航或双臂输入，也不需要按 `k`。
 - 按 `5`：直接进入 `free_walk + [0,0,0]` 普通站立，同时关闭键盘导航发布；
   用于两轮导航之间安全隔离。
+- 按 `6`：关闭键盘导航和双臂发布，并让 S2-FSM 停止 ONNX 推理与 `LowCmd` 写入，
+  供外部 Sonic 控制器接管。看到 `LowCmd publishing suspended` 后才启动外部脚本；
+  切回其他模式前必须先停止外部脚本。
 
 初始化后如果不按任何 high mode，状态机持续运行
 `free_walk + [0,0,0]`，但 `high_mode` 仍是 `None`。切入 mode 1/2 后也先短暂运行
@@ -97,6 +100,7 @@ ros2 run locomotion_controller locomotion_controller_simulator
 双臂行走：3 → Space 循环 z/x/c，并用 W/S、A/D、Q/E 调整速度
 鲁棒站立恢复：4
 零速 free-walk 站立：5
+外部 Sonic 控制接管：6
 停止导航：0
 ```
 

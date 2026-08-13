@@ -126,6 +126,23 @@ class SimulatorNodeTest(unittest.TestCase):
         node._disable_navigation_publishing.assert_called_once_with()
         node._publish_mode.assert_called_once_with(node._high_mode_publisher, 5)
 
+    def test_mode_six_disables_all_keyboard_parameters_before_publish(self):
+        node = SimpleNamespace(
+            _high_mode=1,
+            _is_controller_initialized=True,
+            _high_mode_publisher=MagicMock(),
+            _publish_mode=MagicMock(),
+            _disable_navigation_publishing=MagicMock(),
+            _disable_arm_publishing=MagicMock(),
+            _log_current_state=MagicMock(),
+        )
+
+        SimulatorNode._handle_key(node, "6")
+
+        node._disable_navigation_publishing.assert_called_once_with()
+        node._disable_arm_publishing.assert_called_once_with()
+        node._publish_mode.assert_called_once_with(node._high_mode_publisher, 6)
+
     def test_position_mode_key_hands_navigation_to_totarget(self):
         node = SimpleNamespace(
             _low_mode=1,

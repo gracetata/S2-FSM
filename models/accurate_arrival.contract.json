@@ -1,8 +1,8 @@
 {
   "schema": "hecbot.policy_contract.v1",
   "model": "accurate_arrival.onnx",
-  "sha256": "ad4673888f9a82652ef11380ee00bd131cf2a8dfa56e734a3ede193799130edb",
-  "source_artifact": "accurate_arrival.onnx supplied on 2026-08-12",
+  "sha256": "18f93c057e67a9a8f324d43b7d0dd278181063eb44d14293896bf4182594e3cb",
+  "source_artifact": "accurate_arrival.onnx supplied on 2026-08-13",
   "source_checkpoint": null,
   "input": {
     "name": "obs",

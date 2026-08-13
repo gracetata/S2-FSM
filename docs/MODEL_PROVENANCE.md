@@ -6,7 +6,7 @@
 | 状态机功能 | 部署文件 | 训练产物 | ONNX SHA256 |
 | --- | --- | --- | --- |
 | High 1 / Low 1 速度跟踪（含零速） | `models/free_walk.onnx` | `future5090_model9996_two_goal_robust_v3_20260809/model_final.pt` | `5de4f2852286919395a3579e106ccdee0164cc220e9bd1d9865a64912e1a0dcd` |
-| High 1 / Low 2 精确到点 | `models/accurate_arrival.onnx` | 2026-08-12 提供的 `accurate_arrival.onnx`；checkpoint 未提供 | `ad4673888f9a82652ef11380ee00bd131cf2a8dfa56e734a3ede193799130edb` |
+| High 1 / Low 2 精确到点 | `models/accurate_arrival.onnx` | 2026-08-13 提供的 `accurate_arrival.onnx`；checkpoint 未提供 | `18f93c057e67a9a8f324d43b7d0dd278181063eb44d14293896bf4182594e3cb` |
 | High 3 / Low 1 双臂截持行走 | `models/walk_with_object.onnx` | `checkpoint/walk/armhack_two_goal_20260811/model_armhack_walk_two_goal_robust.pt` | `011c4bbf47846285328045967e45b78274d3c81c7cff315fc19b5c9aae095d5b` |
 | 仅 High 4 鲁棒站立恢复 | `models/extreme_stand_recovery.onnx` | `2026-08-07_16-37-50_g1_extreme_stand_v4_jerk_limited_from_model2999_full_20260807/model_20.pt` | `eb2e993220d2e4a343602dfa1556064fce440ce230580803930f7b82151eab6e` |
 

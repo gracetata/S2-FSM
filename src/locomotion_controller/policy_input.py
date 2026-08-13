@@ -84,7 +84,7 @@ def validate_policy_input_packet(packet: object) -> dict[str, object]:
     _finite_number(packet.get("monotonic_time_s"), "monotonic_time_s")
     if packet.get("model") not in MODEL_NAMES:
         raise RuntimeError("policy input model is invalid")
-    _optional_mode(packet.get("high_mode"), "high_mode", {1, 2, 3, 4, 5})
+    _optional_mode(packet.get("high_mode"), "high_mode", {1, 2, 3, 4, 5, 6})
     _optional_mode(packet.get("low_mode"), "low_mode", {1, 2})
     if not isinstance(packet.get("standing_transition"), bool):
         raise RuntimeError("policy input standing_transition must be boolean")

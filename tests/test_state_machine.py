@@ -7,6 +7,7 @@ from locomotion_controller.state_machine import (
     HIGH_MODE_NAVIGATION,
     HIGH_MODE_STAND_RECOVERY,
     HIGH_MODE_FREE_WALK_STAND,
+    HIGH_MODE_EXTERNAL_CONTROL,
     LOW_MODE_TARGET_POSE,
     LOW_MODE_VELOCITY,
     MODEL_ACCURATE_ARRIVAL,
@@ -167,6 +168,20 @@ class StateMachineTest(unittest.TestCase):
         self.assertEqual(selection.command, ZERO_COMMAND)
         self.assertIsNone(selection.arm_command)
         self.assertFalse(selection.is_standing_transition)
+
+    def test_mode_six_disables_s2_fsm_control_output(self):
+        self.machine.set_low_mode(LOW_MODE_VELOCITY, now=0.5)
+        self.machine.set_navigation_command((0.5, 0.1, 0.2), now=0.5)
+        self.machine.set_high_mode(HIGH_MODE_EXTERNAL_CONTROL, now=1.0)
+
+        selection = self.machine.select(now=1.0)
+
+        self.assertEqual(selection.high_mode, HIGH_MODE_EXTERNAL_CONTROL)
+        self.assertIsNone(selection.low_mode)
+        self.assertEqual(selection.command, ZERO_COMMAND)
+        self.assertIsNone(selection.arm_command)
+        self.assertFalse(selection.is_standing_transition)
+        self.assertFalse(selection.control_enabled)
 
     def test_mode_three_routes_low_one_velocity_and_arm_override(self):
         arm = ArmCommand(1, (0.1,) * 14, (0.2,) * 14, 0.8)

@@ -54,8 +54,8 @@ default angles / Kp / Kd = 通用组
 ```
 
 切入 mode 4 不执行额外的 `stand_duration_s` 等待，下一控制帧直接切换到恢复模型。
-模型切换时 `previous_action` 清零，并继续使用现有 `model_switch_blend_s` 对腿腰目标
-做短时融合；mode 4 不执行外部双臂覆盖。
+模型切换时 `previous_action` 清零，并继续使用现有 `model_switch_blend_s` 对完整
+29DoF 目标（包括双臂）做短时融合；mode 4 不执行外部双臂覆盖。
 
 新模型合同：
 

@@ -15,7 +15,7 @@ locomotion_controller:
     # every ONNX inference. All five models use this one topic.
     policy_input: /hecbot/locomotion/policy_input
 
-    # Application layer: std_msgs/msg/UInt8, legal values 1, 2, 3, 4, 5.
+    # Application layer: std_msgs/msg/UInt8, legal values 1, 2, 3, 4, 5, 6.
     high_level_mode: /hecbot/locomotion/high_level_mode
 
     # Navigation layer: std_msgs/msg/UInt8, legal values 1, 2.

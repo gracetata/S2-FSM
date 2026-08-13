@@ -1,4 +1,4 @@
-"""Pure five-mode state machine used by the 50 Hz runtime."""
+"""Pure six-mode state machine used by the 50 Hz runtime."""
 
 from __future__ import annotations
 
@@ -14,12 +14,14 @@ HIGH_MODE_ARM_STAND = 2
 HIGH_MODE_ARM_WALK = 3
 HIGH_MODE_STAND_RECOVERY = 4
 HIGH_MODE_FREE_WALK_STAND = 5
+HIGH_MODE_EXTERNAL_CONTROL = 6
 HIGH_MODES = {
     HIGH_MODE_NAVIGATION,
     HIGH_MODE_ARM_STAND,
     HIGH_MODE_ARM_WALK,
     HIGH_MODE_STAND_RECOVERY,
     HIGH_MODE_FREE_WALK_STAND,
+    HIGH_MODE_EXTERNAL_CONTROL,
 }
 
 LOW_MODE_VELOCITY = 1
@@ -46,6 +48,7 @@ class ControlSelection:
     high_mode: int | None
     low_mode: int | None
     is_standing_transition: bool
+    control_enabled: bool = True
 
 
 class LocomotionStateMachine:
@@ -92,10 +95,13 @@ class LocomotionStateMachine:
                 return False
             self._high_mode = high_mode
             self._reset_navigation()
+            if high_mode == HIGH_MODE_EXTERNAL_CONTROL:
+                self._low_mode = None
             if high_mode in {
                 HIGH_MODE_ARM_STAND,
                 HIGH_MODE_ARM_WALK,
                 HIGH_MODE_FREE_WALK_STAND,
+                HIGH_MODE_EXTERNAL_CONTROL,
             }:
                 # A pose received for an earlier mode must not be applied to
                 # the newly selected arm policy. The controller holds its
@@ -287,6 +293,18 @@ class LocomotionStateMachine:
                 high_mode=high_mode,
                 low_mode=None,
                 is_transition=False,
+            )
+
+        if high_mode == HIGH_MODE_EXTERNAL_CONTROL:
+            return ControlSelection(
+                model_name=MODEL_FREE_WALK,
+                command_semantics=SEMANTICS_VELOCITY,
+                command=ZERO_COMMAND,
+                arm_command=None,
+                high_mode=high_mode,
+                low_mode=None,
+                is_standing_transition=False,
+                control_enabled=False,
             )
 
         return self._free_walk_stand_selection(

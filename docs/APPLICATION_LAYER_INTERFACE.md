@@ -24,7 +24,7 @@
 
 | topic | 类型 | 合法值 |
 | --- | --- | --- |
-| `/hecbot/locomotion/high_level_mode` | `std_msgs/msg/UInt8` | `1`、`2`、`3`、`4`、`5` |
+| `/hecbot/locomotion/high_level_mode` | `std_msgs/msg/UInt8` | `1`、`2`、`3`、`4`、`5`、`6` |
 
 值的含义：
 
@@ -35,6 +35,7 @@
 | `3` | 持物/双臂行走 | 导航层发送 low 1 速度；双臂层发送 14DoF 输出覆盖命令 |
 | `4` | 鲁棒站立恢复独立测试 | 不需要其他模块；command 固定 `[0,0,0]` |
 | `5` | `free_walk` 零速站立 | 不需要其他模块；command 固定 `[0,0,0]` |
+| `6` | 外部低层控制接管 | S2-FSM 停止推理和 `LowCmd` 写入；外部控制器独占真机 |
 
 ROS 2 示例：
 
@@ -47,7 +48,7 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 
 - mode 1 和 mode 2 切入后，状态机先运行配置时长的
   `free_walk + [0,0,0]`，再进入目标模型。
-- mode 3、mode 4 和 mode 5 直接切入目标模型。
+- mode 3、mode 4、mode 5 和 mode 6 直接切入；mode 6 不选择或运行模型。
 - 重复发送当前 high mode 不会重新开始站立计时，可用于上游状态重发。
 - 切入 mode 1 后，在导航层的新 low mode 和导航参数到达前保持零速。
 - 切入 mode 3 后，只有导航层的 low mode 1 速度会进入 `arm_walk` 模型；缺少
@@ -63,6 +64,9 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
   机器人。只有显式 high mode 4 使用恢复模型。
 - mode 5 不读取 low mode、导航或双臂输入，固定运行
   `free_walk + [0,0,0]`，用于普通零速站立和下一轮导航前的隔离状态。
+- mode 6 不读取 low mode、导航或双臂输入，并停止 S2-FSM 的 ONNX 推理和所有
+  `LowCmd` 写入。看到控制器打印 `LowCmd publishing suspended` 后才能启动外部控制器；
+  切回其他模式前必须先停止外部控制器，避免两个 `LowCmd` 发布者重叠。
 - 初始化后未收到任何 high mode 时，状态机保持
   `high_mode=None + free_walk + [0,0,0]`。
 - 非法值会被拒绝，并使状态机回到 `free_walk + [0,0,0]` 安全等待。
@@ -74,7 +78,8 @@ ros2 topic pub --once /hecbot/locomotion/high_level_mode \
 - `/hecbot/locomotion/low_level_mode`：由导航层发送；
 - `/hecbot/locomotion/navigation_command`：由导航层发送；
 - `/hecbot/upper_body_cmd`：由双臂操作层发送；
-- 任何 `rt/lowcmd`：只能由本状态机发布。
+- 任何 `rt/lowcmd`：正常模式只能由本状态机发布；仅在 high mode 6 已确认暂停后，
+  才能由一个外部低层控制器独占发布。
 
 联调时可运行键盘模拟器代替应用层切换 high mode。正式接入应用层后不需要启动
 键盘模拟器。

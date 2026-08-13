@@ -263,7 +263,7 @@ class UnitreeModeGuardTest(unittest.TestCase):
             target_after_override,
         )
 
-    def test_model_switch_blend_never_interpolates_arm_joints(self):
+    def test_model_switch_blend_interpolates_every_joint(self):
         import numpy as np
 
         controller = self.module.UnitreeController.__new__(
@@ -279,5 +279,62 @@ class UnitreeModeGuardTest(unittest.TestCase):
 
         np.testing.assert_allclose(
             blended,
-            np.asarray((1.0, 4.0, 3.0, 8.0), dtype=np.float32),
+            np.asarray((1.0, 2.0, 3.0, 4.0), dtype=np.float32),
         )
+
+    def test_external_control_frame_returns_before_lowcmd_or_inference(self):
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._last_lowstate_received_at = 1.0
+        controller._config = SimpleNamespace(lowstate_runtime_timeout_s=1.0)
+        controller._check_ankle_motor_temperatures = MagicMock()
+        controller._state_machine = MagicMock()
+        controller._state_machine.select.return_value = SimpleNamespace(
+            control_enabled=False,
+        )
+        controller._enter_external_control = MagicMock()
+        controller._send_command = MagicMock()
+        controller._policies = MagicMock()
+
+        controller._run_frame(now=1.1)
+
+        controller._enter_external_control.assert_called_once_with()
+        controller._send_command.assert_not_called()
+        controller._policies.get_policy.assert_not_called()
+
+    def test_leaving_external_control_resumes_from_measured_pose(self):
+        import numpy as np
+
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        measured = np.arange(29, dtype=np.float32)
+        controller._external_control_active = True
+        controller._active_model_name = "stale"
+        controller._previous_action = np.ones(29, dtype=np.float32)
+        controller._current_policy_positions = MagicMock(return_value=measured)
+
+        with patch("builtins.print"):
+            controller._leave_external_control()
+
+        self.assertFalse(controller._external_control_active)
+        self.assertIsNone(controller._active_model_name)
+        np.testing.assert_allclose(controller._last_target, measured)
+        np.testing.assert_allclose(controller._previous_action, np.zeros(29))
+
+    def test_close_in_external_mode_does_not_publish_damping(self):
+        controller = self.module.UnitreeController.__new__(
+            self.module.UnitreeController
+        )
+        controller._stop = MagicMock()
+        controller._thread = None
+        controller._totarget_logger = MagicMock()
+        controller._has_taken_control = True
+        controller._external_control_active = True
+        controller._config = SimpleNamespace(fault_damping_duration_s=1.0)
+        controller._send_damping = MagicMock()
+
+        controller.close()
+
+        controller._send_damping.assert_not_called()

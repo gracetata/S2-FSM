@@ -70,7 +70,7 @@ POLICY_INPUT_HISTORY_SIZE = 256
 
 
 class UnitreeController:
-    """Own the only LowCmd publisher and the only inference thread."""
+    """Own inference and LowCmd output except during external-control mode."""
 
     def __init__(
         self,
@@ -163,6 +163,7 @@ class UnitreeController:
         self._previous_action = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         self._last_target = np.zeros(POLICY_JOINT_COUNT, dtype=np.float32)
         self._active_model_name: str | None = None
+        self._external_control_active = False
         self._inference_frame_index = 0
         self._switch_started_at = 0.0
         self._switch_from_target = np.zeros(
@@ -283,7 +284,7 @@ class UnitreeController:
         except Exception as error:
             log_error = error
         finally:
-            if self._has_taken_control:
+            if self._has_taken_control and not self._external_control_active:
                 self._send_damping(self._config.fault_damping_duration_s)
         if log_error is not None:
             raise log_error
@@ -363,10 +364,11 @@ class UnitreeController:
         except Exception as error:
             self._control_error = f"50 Hz control loop failed: {error}"
             self._first_frame.set()
-            try:
-                self._send_damping(self._config.fault_damping_duration_s)
-            except Exception as damping_error:
-                self._control_error += f"; damping failed: {damping_error}"
+            if not self._external_control_active:
+                try:
+                    self._send_damping(self._config.fault_damping_duration_s)
+                except Exception as damping_error:
+                    self._control_error += f"; damping failed: {damping_error}"
         finally:
             try:
                 self._totarget_logger.end_session("control_loop_stopped")
@@ -390,6 +392,11 @@ class UnitreeController:
         self._check_ankle_motor_temperatures(now)
 
         selection = self._state_machine.select(now)
+        if not selection.control_enabled:
+            self._enter_external_control()
+            return
+        if self._external_control_active:
+            self._leave_external_control()
         if selection.model_name != self._active_model_name:
             if self._active_model_name == MODEL_ACCURATE_ARRIVAL:
                 self._totarget_logger.end_session(
@@ -460,10 +467,6 @@ class UnitreeController:
 
         target = default_angles + action * self._config.action_scale
         target = self._blend_model_switch(target, now)
-        if direct_arm_target is not None:
-            # Arm commands are never temporally interpolated. With no command
-            # for this mode, direct_arm_target is the previous frame target.
-            target[self._arm_indices] = direct_arm_target
         self._previous_action = self._previous_action_for(
             target,
             default_angles,
@@ -593,6 +596,34 @@ class UnitreeController:
         self._arm_baseline = self._last_target[self._arm_indices].copy()
         self._previous_action.fill(0.0)
 
+    def _enter_external_control(self) -> None:
+        if self._external_control_active:
+            return
+        if self._active_model_name == MODEL_ACCURATE_ARRIVAL:
+            self._totarget_logger.end_session("external_control_takeover")
+        self._external_control_active = True
+        self._active_model_name = None
+        self._previous_action.fill(0.0)
+        print(
+            "[EXTERNAL_CONTROL] High Mode 6 active; "
+            "S2-FSM LowCmd publishing suspended",
+            flush=True,
+        )
+
+    def _leave_external_control(self) -> None:
+        self._external_control_active = False
+        # The external controller may have moved every joint. Resume from the
+        # latest measured pose so the full-body model switch blend cannot jump
+        # back toward S2-FSM's stale pre-takeover target.
+        self._last_target = self._current_policy_positions()
+        self._active_model_name = None
+        self._previous_action.fill(0.0)
+        print(
+            "[EXTERNAL_CONTROL] High Mode 6 released; "
+            "S2-FSM LowCmd publishing resuming from measured pose",
+            flush=True,
+        )
+
     def _parameters_for(
         self,
         selection: ControlSelection,
@@ -643,9 +674,6 @@ class UnitreeController:
         blended = self._switch_from_target + (
             target - self._switch_from_target
         ) * alpha
-        # The model-switch transition is only for legs and waist. Arm targets
-        # always take effect in the current frame, regardless of active model.
-        blended[self._arm_indices] = target[self._arm_indices]
         return blended
 
     def _read_robot_state(
