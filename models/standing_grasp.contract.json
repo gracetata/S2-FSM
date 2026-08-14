@@ -1,0 +1,27 @@
+{
+  "schema": "hecbot.policy_contract.v1",
+  "model": "standing_grasp.onnx",
+  "sha256": "75529f18c702e7ba130098dc2e892377e11f92353d692cd1d6f4e9bc93813594",
+  "source_artifact": "model_159.pt supplied on 2026-08-14",
+  "source_checkpoint": {
+    "name": "model_159.pt",
+    "iteration": 159,
+    "sha256": "7d7343a55c68abe67c1779158eb0d8ad209a5969e38acfe8844887367a8318a1"
+  },
+  "input": {
+    "name": "obs",
+    "type": "tensor(float)",
+    "shape": [1, 96]
+  },
+  "output": {
+    "name": "actions",
+    "type": "tensor(float)",
+    "shape": [1, 29]
+  },
+  "control_frequency_hz": 50,
+  "action_scale": 0.25,
+  "command": [0.0, 0.0, 0.0],
+  "joint_order": "controller.policy_joint_names",
+  "default_angles": "impedance default_angles_standing_grasp",
+  "pd_gains": "impedance kps_standing_grasp/kds_standing_grasp"
+}

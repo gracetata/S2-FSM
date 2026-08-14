@@ -13,6 +13,7 @@ ARM_WALK_MODEL_FILE = PROJECT_ROOT / "models" / "walk_with_object.onnx"
 ACCURATE_ARRIVAL_MODEL_FILE = (
     PROJECT_ROOT / "models" / "accurate_arrival.onnx"
 )
+ARM_STAND_MODEL_FILE = PROJECT_ROOT / "models" / "standing_grasp.onnx"
 CONTRACT_FILE = (
     PROJECT_ROOT / "models" / "extreme_stand_recovery.contract.json"
 )
@@ -23,10 +24,34 @@ ARM_WALK_CONTRACT_FILE = (
 ACCURATE_ARRIVAL_CONTRACT_FILE = (
     PROJECT_ROOT / "models" / "accurate_arrival.contract.json"
 )
+ARM_STAND_CONTRACT_FILE = (
+    PROJECT_ROOT / "models" / "standing_grasp.contract.json"
+)
 CONFIG_FILE = PROJECT_ROOT / "config" / "locomotion_controller.yaml"
 
 
 class StandRecoveryContractTest(unittest.TestCase):
+    def test_arm_stand_model_hash_and_static_contract(self):
+        contract = json.loads(
+            ARM_STAND_CONTRACT_FILE.read_text(encoding="utf-8")
+        )
+        digest = sha256(ARM_STAND_MODEL_FILE.read_bytes()).hexdigest()
+
+        self.assertEqual(digest, contract["sha256"])
+        self.assertEqual(contract["input"], {
+            "name": "obs",
+            "type": "tensor(float)",
+            "shape": [1, 96],
+        })
+        self.assertEqual(contract["output"], {
+            "name": "actions",
+            "type": "tensor(float)",
+            "shape": [1, 29],
+        })
+        self.assertEqual(contract["control_frequency_hz"], 50)
+        self.assertEqual(contract["action_scale"], 0.25)
+        self.assertEqual(contract["command"], [0.0, 0.0, 0.0])
+
     def test_accurate_arrival_model_hash_and_static_contract(self):
         contract = json.loads(
             ACCURATE_ARRIVAL_CONTRACT_FILE.read_text(encoding="utf-8")
@@ -122,6 +147,10 @@ class StandRecoveryContractTest(unittest.TestCase):
         self.assertEqual(
             config["models"]["arm_walk"],
             "models/walk_with_object.onnx",
+        )
+        self.assertEqual(
+            config["models"]["arm_stand"],
+            "models/standing_grasp.onnx",
         )
         self.assertEqual(
             config["models"]["accurate_arrival"],
